@@ -1,0 +1,36 @@
+function [CHs] = Load2phImage_mat(frame,chvec,varargin)
+
+%varargin can be the trial number (1 to N)
+%if you want to use the preset condition/repeat to define the trial, leave out varargin.
+
+
+global twophDATADIR AUE
+
+%global tf filepath
+
+trial = varargin{1};
+
+filepath = [twophDATADIR AUE ' ' sprintf('%03d',trial) '.mat'];
+
+%filepath = [twophDATADIR '\' pepLOADED ts '.tif'];
+
+
+load(filepath,'state')
+
+
+if chvec(1) == 1    
+    CHs{1} = double(state.acq.acquiredData{1}(:,:,frame);    
+end
+
+if chvec(2) == 1    
+    CHs{2} = state.acq.acquiredData{2}(:,:,frame);     
+end
+
+if chvec(3) == 1    
+    CHs{3} = state.acq.acquiredData{3}(:,:,frame);     
+end
+
+if chvec(4) == 1    
+    CHs{4} = state.acq.acquiredData{4}(:,:,frame);     
+end
+

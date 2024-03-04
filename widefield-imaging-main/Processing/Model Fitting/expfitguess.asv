@@ -1,0 +1,10 @@
+
+function G = expfitguess
+
+%Double check Initial guesses
+
+global RF;
+
+f = RF;
+
+G = [max(RF)-min(RF) .5 min(RF)];

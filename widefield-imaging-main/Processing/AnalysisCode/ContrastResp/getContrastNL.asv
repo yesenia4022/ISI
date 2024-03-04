@@ -1,0 +1,55 @@
+function getContrastNL
+
+%kernPop can be obtained from 'GetCellKernels'
+
+global f0m bwCell1
+
+kernPop = GetCellKernels(f0m,bwCell1);
+
+
+dim = size(kernPop);
+
+kernPopmod = zeros(dim);
+k = 1;
+for i = 1:dim(3)   %loop through each cell    
+    
+    kern = kernPop(:,:,i);
+    
+    if max(kern(:)) > .1
+
+        tcdum = mean(kern(2:end,:));
+        %tcdum = kern(end,:);
+        idma = find(tcdum == max(tcdum));
+        kern = circshift(kern,[0 1-idma]);
+
+        kernPopmod(:,:,k) = kern;
+
+
+        for c = 1:dim(1)
+
+            Slope(c,k) = ((kern(c,1)-kern(c,2)));  %Get slope
+
+        end
+        
+        k = k+1;
+    end
+
+    
+end
+
+
+normer = ones(length(Slope(:,1)),1)*mean(Slope(1:end,:));
+normer =
+Slope = Slope./normer;
+
+id = find(Slope > 10 | Slope < -10);
+Slope(id) = NaN;
+
+muSlope = nanmean(Slope,2);
+sigSlope = nanstd(Slope,[],2)/sqrt(length(Slope(1,:)));
+
+figure,errorbar(muSlope,sigSlope,'-o')
+
+figure,plot(Slope)
+
+

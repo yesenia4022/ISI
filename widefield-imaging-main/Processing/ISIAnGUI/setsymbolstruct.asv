@@ -1,0 +1,28 @@
+function setsymbolstruct
+
+%Put all the symbol information into global structure
+
+global symbolInfo Analyzer G_handle
+
+Nsym = length(Analyzer.loops.conds{1}.symbol);
+symbolInfo = struct;
+Fsymbol = get(handles.primSymbol,'string'); %primary parameter symbol in looper to analyze
+symbolInfo.ID(1) = get(handles.primSymbol,'value');  %The index with respect to the looper
+symbolInfo.str{1} = Fsymbol{symbolInfo.ID(1)};  %Selected string
+symbolInfo.domType = get(handles.domType,'value');  %Type of domain for primary symbol... .e.g. circular 'Axis'
+
+if Nsym > 1
+    Fsymbol = get(handles.secSymbol,'string'); %secondary symbol
+    symbolInfo.ID(2) = get(handles.secSymbol,'value');
+    symbolInfo.str{2} = Fsymbol{symbolInfo.ID(2)};
+    symbolInfo.Collapse(1) = get(handles.secCollapse,'value');  %Describes how to collapse across secondary loop domains
+    
+    if Nsym > 2
+        
+        Fsymbol = get(handles.tertSymbol,'string'); %tertiary symbol
+        symbolInfo.ID(3) = get(handles.tertSymbol,'value');
+        symbolInfo.str{3} = Fsymbol{symbolInfo.ID(3)};
+        symbolInfo.Collapse(2) = get(handles.tertCollapse,'value');  %Describes how to collapse across tertiary loop domains
+    end
+    
+end

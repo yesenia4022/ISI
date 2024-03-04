@@ -1,0 +1,61 @@
+function XcorrPop
+
+global maskS cellS ACQinfo
+
+nID = getNeuronMask;  %get the index values for the neurons
+masklabel = bwlabel(maskS.neuronmask,4);
+celldom = unique(masklabel);
+celldom = celldom(2:end);
+
+for p = 1:length(celldom)
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    CoM(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+end
+
+Nx = ACQinfo.pixelsPerLine;
+Ny = ACQinfo.linesPerFrame;
+
+trial = 3;
+k = 1;
+for p = 1:length(celldom)
+    for q = p+1:length(celldom)
+   
+        dy = (CoM(p,1)-CoM(q,1))*300/Ny;
+        dx = (CoM(p,2)-CoM(q,2);
+        
+        if dx < 10
+
+            D(k) = sqrt(dy.^2 + dx.^2);
+
+            dum = corrcoef(cellS.cellMat{trial}(nID(p),:),cellS.cellMat{trial}(nID(q),:));
+            R(k) = dum(1,2);
+
+            k = k+1;
+
+        end
+        
+    end
+end
+
+figure,scatter(D,R,'.')
+
+Nbins = 4;
+ptsbin = floor(length(D(:))/Nbins);
+[DS id] = sort(D(:));
+RS = R(id);
+for i = 1:Nbins
+    idsamp = ((i-1)*ptsbin+1):i*ptsbin;
+    if i == Nbins
+        idsamp = ((i-1)*ptsbin+1):length(D(:));
+    end
+    sampD = DS(idsamp);
+    sampR = RS(idsamp);
+    
+    muD(i) = trimmean(sampD,10);
+    muR(i) = trimmean(sampR,10);
+    sigD(i) = nanstd(sampD)/sqrt(length(sampD));
+    sigR(i) = nanstd(sampR)/sqrt(length(sampD));
+end
+    
+hold on
+errorbar(muD,muR,sigR,'k')

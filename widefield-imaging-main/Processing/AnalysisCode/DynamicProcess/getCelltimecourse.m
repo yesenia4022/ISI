@@ -1,0 +1,61 @@
+function [cellMat] = getCelltimecourse(Tens,idcell,CoM,cellWidth)
+
+Ncell = length(idcell);
+Nt = length(Tens(1,1,:))-1; %don't use last frame
+
+cellMat = zeros(Ncell,Nt);
+
+%%%%
+%%%%
+Tdim = size(Tens);
+CoM = round(CoM);
+
+dum = cellWidth(2:end,:);
+sig = mean(dum(:));
+sig = 1.5*sig;
+
+smoother = fspecial('gaussian',[Tdim(1) Tdim(2)],sig);
+smoother = abs(fft2(smoother));
+for z = 1:Nt
+    Tensdum = Tens(:,:,z);
+    Tensdum = ifft2(fft2(Tensdum).*smoother);
+    
+    idCoM = Tdim(1)*(CoM(:,2)-1) + CoM(:,1);
+    cellMat(:,z) = Tensdum(idCoM);
+    
+%     for p = 1:Ncell
+%         samp = Tensdum(idcell{p});
+%         %id = find(samp > prctile(samp,50));
+%         cellMat(p,z) = max(samp);
+%     end
+end
+
+%%%%
+%%%%
+
+% fvec = numel(Tens(:,:,1))*(0:Nt-1);
+% for p = 1:Ncell
+%     tcell = zeros(length(idcell{p}),Nt);
+%     for z = 1:length(idcell{p})
+%         tcell(z,:) = Tens(fvec+idcell{p}(z));      
+%     end    
+%     cellMat(p,:) = mean(tcell);
+% end
+
+% 
+% for p = 2:Ncell
+%     idx = round(CoM(p,2)-3*cellWidth(p,2)):round(CoM(p,2)+3*cellWidth(p,2));
+%     idy = round(CoM(p,1)-3*cellWidth(p,1)):round(CoM(p,1)+3*cellWidth(p,1));
+%     
+%     sig = mean(cellWidth(p,:));
+%     mask = fspecial('gaussian',[length(idy) length(idx)],sig);
+%     
+%     tcell = zeros(length(idy),length(idx),Nt);
+%     for z = 1:length(idx)
+%         for k = 1:length(idy)
+%             tcell(k,z,:) = Tens(k,z,1:Nt)*mask(k,z);      
+%         end
+%     end    
+%     cellMat(p,:) = squeeze(mean(mean(tcell,1),2));
+% end
+

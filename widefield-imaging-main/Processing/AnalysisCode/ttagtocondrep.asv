@@ -1,0 +1,18 @@
+function [cmatch rmatch] = ttagtocondrep(ttag);
+
+nc = pepgetnoconditions;
+nr = pepgetnorepeats;
+ 
+for c = 0:nc-1
+    pepsetcondition(c)
+    for r = 0:nr-1
+        pepsetrepeat(r)
+        ttag2 = pepgettimetag;
+        if ttag == ttag2
+            cmatch = c;
+    rmatch = r;
+            return
+        end
+    end
+end
+        

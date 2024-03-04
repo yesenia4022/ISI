@@ -1,0 +1,26 @@
+function ManualCellSorter(im)
+
+dim = size(ang);
+set(gcf,'Color',[1 1 1]);
+
+imagesc(im), colormap gray
+
+axis image;
+
+fh = gcf;
+
+datacursormode on;
+dcm_obj = datacursormode(fh);
+set(dcm_obj,'DisplayStyle','window','SnapToDataVertex','on','UpdateFcn',@myupdatefcn);
+
+
+function txt = myupdatefcn(empt,event_obj)
+
+%Matlab doesn't like it when I try to input other things into myupdatefcn,
+%this is why I have these globals
+
+figure(99)
+
+SEn = sqrt(length(Flim(1):Flim(2))*nr);  %standard error normalizer for tuning curve
+%  
+pos = round(get(event_obj,'Position')); %pos(1) is column dimension

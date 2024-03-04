@@ -1,0 +1,11 @@
+function x = SoGfitter
+
+global RF
+
+x0 = SoGfitguess;
+dim = length(RF);
+
+% options = optimset('MaxFunEvals',6000,'MaxIter',6000,'TolFun',.00004,'TolX',.00004);
+% [x,f] = fminsearch('SoGfitter_handle',x0,options);
+
+[x] = fminsearch('SoGfitter_handle',x0);

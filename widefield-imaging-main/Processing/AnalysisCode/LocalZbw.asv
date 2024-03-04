@@ -1,0 +1,26 @@
+ 
+function [imout bwout] = LocalZbw(im,R,bw,thresh)
+
+dim = size(im);
+[rowID colI] = find(bw);
+
+[x y] = meshgrid(1:dim(2),1:dim(1));
+x = x.*bw;
+y = y.*bw;
+
+imout = NaN*ones(dim(1),dim(2));
+
+for i = 1:length(rows)
+        r = sqrt((y-r).^2 + (x-c).^2);
+        id = find(r<=R);
+        samp = im(id);
+        imout(i,j) = zscore(samp);
+
+end
+
+bwout = zeros(dim(1),dim(2));
+id = find(imout>thresh);
+bwout(id) = 1;
+
+
+ 

@@ -1,0 +1,46 @@
+function im = getTrialMean(Tlim,varargin)
+
+%if varargin has 2 elements, it assumes you have entered
+%(condition,repeat).  If there is 1 element, it assumes you have entered
+%the (timetag).
+
+%Tlim is a 2 element vector in ms
+
+global datadir Analyzer
+
+if length(varargin) ==  2
+    ttag = gettimetag(varargin{1},varargin{2});
+elseif length(varargin) == 1
+	ttag = varargin{1};
+end
+
+ue = datadir(end-8:end-1);
+
+fname = [datadir ue  '_' sprintf('%03d',ttag)];
+
+
+%%%Find frame limits from time limits
+
+dS = processSyncs(Analyzer.loops.conds{varar}.repeats{1}.dSyncswave,10000);
+
+%dS = Analyzer.loops.conds{1}.repeats{1}.dispSyncs;
+aS = Analyzer.loops.conds{1}.repeats{1}.acqSyncs;
+
+sttime = dS(2) + Tlim(1)/1000;
+[dum id] = min(abs(aS-sttime));
+Flim(1) = id(1);  %closest frame to requested start time
+
+endtime = dS(2) + Tlim(2)/1000;
+[dum id] = min(abs(aS-endtime));
+Flim(2) = id(1);  %closest frame to requested end time
+
+%
+%Use this if each frame is saved as a variable within the .mat file
+im = 0;
+for i = Flim(1):Flim(2)
+    var = ['f' num2str(i)];
+    load(fname,var)
+    eval(['im = im + double(' var ');']);
+    eval(['clear ' var]) %might run out of memory if you don't clear
+end
+ 

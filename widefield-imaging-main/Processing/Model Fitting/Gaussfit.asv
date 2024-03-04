@@ -1,0 +1,54 @@
+function [param ffit varacc] = Gaussfit(dom,f,circflag)
+
+global RF
+
+%%%%%%%%%%%
+mi = min(f);
+f = f-mi;
+E = max(f);
+f = f/E;
+%%%%%%%%%%%%
+
+if circflag == 1
+    [ma ind] = max(f);
+    f = circshift(f,[0 round(length(f)/2)-ind]);
+end
+
+%%%search%%%
+RF = f;
+param = gaussfitter;
+
+%%%%%%%%%%%
+
+ddom = dom(2)-dom(1);
+
+ffit = exp(-((1:length(f))-param(1)).^2/(2*param(2).^2));
+ffit = param(3)*ffit + param(4);
+
+varacc = (var(f(:))-var(f(:)-ffit(:)))/var(f(:));
+
+if circflag == 1
+    ffit = circshift(ffit,[0 ind-round(length(ffit)/2)]);
+    param(1) = param(1) -  (round(length(f)/2)-ind);
+%     if param(1) < 1
+%         param(1) = (length(f)+1)-param(1);
+%     end
+end
+
+ffit = ffit*E + mi;
+param(3) = param(3)*E;
+param(4) = param(4)*E+mi;
+
+
+param(1) = (param(1)-1)*ddom;
+    if param(1) < 0
+        param(1) = 180+param(1);
+    end
+
+param(2) = param(2)*ddom;
+
+
+
+%%
+
+

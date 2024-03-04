@@ -1,0 +1,92 @@
+function [kernPop popBlank CoM pardom] = GetCellKernels(f0,cellmask1,cellmask2,gliaflag)
+
+
+%Returns the kernel response matrices and corresponding locations for cells
+%in cellmask
+
+%'nflag' if 1 then it takes the glia.  If 0, then the neurons
+
+global Analyzer bw
+%Each element of the cell array 'f0dum' is the average image for the
+%corresponding condition
+
+if ~isempty(bw)
+    cellmask1 = cellmask1.*bw;
+end
+
+Np = length(Analyzer.loops.conds{1}.symbol);  %number of looping params
+
+bflag = stimblank(getnoconditions); %if a blank exists in this experiment
+if bflag
+    f0blank = f0{end};
+    f0(end) = [];
+end
+
+for z = 1:Np  %loop through each loop parameter
+    for i = 1:length(f0)
+        paramlist{z}(i) = Analyzer.loops.conds{i}.val{z};
+    end
+end
+
+for z = 1:Np    
+    paramlist{z} = round(paramlist{z}*1000)/1000;    
+    pardom{z} = unique(paramlist{z});    
+end
+
+cmdum = cellmask1;  %Cell mask within this ROI
+masklabel = bwlabel(cmdum);
+celldom = unique(masklabel);
+celldom = celldom(2:end); %first element is the neuropil
+Ncell = length(celldom);
+
+dim = size(cellmask1);
+CoM = zeros(Ncell,2);
+Nneuron = 0;
+for p = 1:Ncell
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    
+    idvec = dim(1)*(idcellx-1) + idcelly;
+    
+    if gliaflag
+    if sum(cellmask2(idvec)) ~= 0        
+        Nneuron = Nneuron+1;    
+        CoM(Nneuron,:) = [mean(idcelly) mean(idcellx)];  %center of mass    
+        idcell{Nneuron} = find(masklabel(:) == celldom(p));       
+    end
+    else
+        
+    end
+end
+
+
+for i = 1:length(f0)
+   
+        for z = 1:Np
+            kernloc(z) = find(pardom{z} == paramlist{z}(i));  %location in kernel
+        end
+        
+        %Get kernel value for each cell
+        for p = 1:Nneuron
+
+            R = mean(f0{i}(idcell{p}));
+            
+            switch Np
+                
+                case 1
+                    kernPop(kernloc(1),p) = R;                
+                case 2                    
+                    kernPop(kernloc(1),kernloc(2),p) = R;
+            end
+
+        end
+        
+end
+
+if bflag
+    for p = 1:Nneuron
+        popBlank(p) = mean(f0blank(idcell{p}));
+    end
+else
+    popBlank = [];
+end
+

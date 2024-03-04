@@ -1,0 +1,13 @@
+function resetMask
+
+global maskS G_handles
+
+bw = ZThresh(maskS.imZ,str2num(get(G_handles.maskThresh,'string')),str2num(get(G_handles.maskMorph,'string')));
+bw = cellMorph(bw,str2num(get(G_handles.maskMorph,'string'))); 
+[maskS.bwCell1 maskS.bwCell2] = cellMinSize(bw,str2num(get(G_handles.minCellArea,'string')));
+bw{1} = bw{1}.*maskS.bw;
+bw{2} = bw{2}.*maskS.bw;
+figure(40), 
+imagesc(maskS.im{1}), colormap gray
+hold on
+contour(maskS.bwCell1,.5,'r')

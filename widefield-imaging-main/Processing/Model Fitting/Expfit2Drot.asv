@@ -1,0 +1,42 @@
+function [param ffit varaccount] = Expfit2Drot(f,varargin,center)
+
+global RF cent
+
+if ~isempty(varargin{1})
+    global origuess 
+    origuess = varargin{1};
+end
+
+%%%search%%%
+RF = f;
+cent = center;
+param = Expfitter2Drot;
+%%%%%%%%%%%
+
+imW = length(f(:,1));
+domx = -floor(imW/2):ceil(imW/2)-1;
+domy = ceil(imW/2)-1:-1:-floor(imW/2);
+
+[x y] = meshgrid(domx,domy);
+
+xgp = xg*cos(origuess*pi/180) + yg*sin(origuess*pi/180);
+ygp = yg*cos(origuess*pi/180) - xg*sin(origuess*pi/180);
+
+xp = x*cos(param(5)*pi/180) + y*sin(param(5)*pi/180);
+yp = y*cos(param(5)*pi/180) - x*sin(param(5)*pi/180); 
+
+ffitD1 = exp(-abs(yp-xgp)*param(1));
+ffitD2 = exp(-abs(xp-cent(2))*param(2));
+
+ffit = param(3)*ffitD1.*ffitD2 + param(4);
+
+varaccount = (var(f(:))-var(f(:)-ffit(:)))/var(f(:));
+
+%Put the means back on the original axis
+
+p2 = param(2)*cos(-param(5)*pi/180) + param(1)*sin(-param(5)*pi/180);
+p1 = param(1)*cos(-param(5)*pi/180) - param(2)*sin(-param(5)*pi/180);
+param(1) = p1;
+param(2) = p2;
+
+%figure,plot(errall)

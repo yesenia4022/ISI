@@ -1,0 +1,14 @@
+
+
+[bwCell1 bwCell2] = MakeCellMask(14,.8,3);
+
+bwR{1} = roipoly;  %LM 
+bwR{2} = roipoly;
+
+
+ROICompare(bwR,bwCell1);
+
+
+
+
+

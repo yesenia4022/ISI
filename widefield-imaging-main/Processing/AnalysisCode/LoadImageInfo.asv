@@ -1,0 +1,7 @@
+function LoadImageInfo(path)
+
+global twophDATADIR pepLOADED
+
+twophDATADIR = [path pepLOADED];
+
+setacqinfo([path pepLOADED]);

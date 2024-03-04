@@ -1,0 +1,82 @@
+function [bwCell1 bwCell2] = MakeCellMask_mat(msize,mthresh,mmorph,minsize,varargin)
+
+global ACQinfo processF0_handles
+
+%%%Estimate cell diameter in pixels%%%
+
+%constants
+micpercell = 15; %approximate cell diameter in microns
+micpervolt = 350/2.5; %depends on objective
+
+micW = micpervolt*ACQinfo.scanAmplitudeX/ACQinfo.zoomFactor;  %FOV micron width 
+micperpixel = micW/ACQinfo.pixelsPerLine; %microns per pixel
+ 
+
+cellD = micperpixel/micpercell;  %Approximate diameter of a cell in pixels
+cellD = cellD*3;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if isempty(varargin)
+    CHs = GetTrialData([1 1 0 0],1);
+    for i = 1:2       
+        if get(pRevCorrF0_handles.fastMotionFlag,'value')
+            [Px_fast Py_fast] = getTrialMotion3(CHs{i});
+            CHs{i} = makeGeoTrx(CHs{i},Px_fast,Py_fast);
+        end
+        CHs{i} = mean(CHs{i}(:,:,2:end-1),3);
+        
+    end
+else
+    CHs{1} = varargin{1};
+    CHs{2} = varargin{1};
+end
+
+for i = 1:2
+    
+    if i == 1
+        figure, imagesc(CHs{i}), colormap gray
+    end
+    
+    deb = 0;
+    if deb
+        %CH{i} = deconvblind(CH{i}, hanning(deb)*hanning(deb)');
+        CHs{i} = deconvblind(CHs{i}, ones(deb,deb));
+    end
+    
+    %local Z and make binary with threshold
+    [dum bwCell{i}] = LocalZ(CHs{i},round(msize),mmorph,mthresh);  
+    
+    %Morphological opening, followed by downsampling
+    SE = strel('disk',mmorph,0);    
+    if mmorph ~= 0
+        bwCell{i} = imopen(bwCell{i},SE);
+        
+        D = mmorph+1;
+        bwCell{i} = bwCell{i}(1:D:end,1:D:end);
+    end
+    
+    
+    %Get rid of cells that are smaller than minsize
+    if minsize > 0
+        
+        celllabel = bwlabel(bwCell{i});
+        cellid = unique(celllabel);
+        for j = 2:length(cellid)
+            id = find(cellid(j) == celllabel);
+            length(id)
+            if length(id) < minsize
+                bwCell{i}(id) = 0;
+            end
+        end
+        
+    end
+        
+end
+
+bwCell1 = bwCell{1};
+bwCell2 = bwCell{2};
+figure,imagesc(bwCell1), colormap gray
+%figure,imagesc(bwCell2), colormap gray
+
+

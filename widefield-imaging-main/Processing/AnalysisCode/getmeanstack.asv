@@ -1,0 +1,34 @@
+function stack = getmeanstack(filepath)
+
+tf = imformats('tif');
+info = feval(tf.info, filepath);
+infoH = info(1).ImageDescription;
+imgHeader = parseHeaderNew(infoH);
+ACQinfo = imgHeader.acq;
+
+ACQinfo.numberOfZSlices
+ACQinfo.zStepSize
+ACQinfo.numberOfFrames
+
+Nimages = length(info);
+
+tf = imformats('tif');
+
+framestart = 1;
+framestop = Nimages;
+
+clear CHs CHsdum
+k = 0;
+slce = 1;
+for frame=framestart:2:framestop
+    k = k+1;
+    CHsdum(:,:,k) = double(feval(tf.read, filepath, frame));
+    
+    if k == 10
+        k = 0;
+        std1050{slce} = std(CHsdum,[],3);
+        CHs1050{slce} = mean(CHsdum,3);
+        slce = slce+1;
+    end
+    
+end

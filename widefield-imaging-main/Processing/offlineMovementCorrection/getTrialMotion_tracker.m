@@ -1,0 +1,276 @@
+function [Pxhat Pyhat] = getTrialMotion_tracker(CH,slowflag)
+
+%Ian Nauhaus
+
+global ACQinfo G_handles
+% 
+% tf = imformats('tif');
+% info = feval(tf.info, filepath);
+% infoH = info(1).ImageDescription;
+% imgHeader = parseHeaderNew(infoH);
+% ACQinfo = imgHeader.acq;
+
+Idim = [ACQinfo.linesPerFrame ACQinfo.pixelsPerLine];
+Fperiod = ACQinfo.msPerLine*ACQinfo.linesPerFrame; %frame period in ms
+
+
+%Light smoothing of the data across time
+CH(:,:,end) = CH(:,:,end-1);
+CH(:,:,1) = CH(:,:,2);
+if slowflag
+    CH(:,:,end) = CH(:,:,end-1);
+    CHsfilt = tempsmooth(hann(round(5000/Fperiod)),CH);
+else
+    CHsfilt = tempsmooth([.5 1 .5],CH);
+end
+%CHsfilt = CH;
+
+%Smooth data in space
+
+totalzoom = 2.5/ACQinfo.scanAmplitudeY*ACQinfo.zoomFactor;
+linesPerMic = ACQinfo.linesPerFrame/(300/totalzoom);
+smoothW = ceil(3.8/(linesPerMic));  %3.8 is a heuristically determined constant that seems to work pretty well
+
+skern = hann(smoothW)';
+skern = skern'*skern;
+skern = skern/sum(skern(:));
+smoother = zeros(Idim(1),Idim(2));
+smoother(1:length(skern(:,1)),1:length(skern(1,:))) = skern;
+smoother = abs(fft2(smoother));
+
+CHsfilt(1,:,:) = CHsfilt(2,:,:);
+CHsfilt(end,:,:) = CHsfilt(end-1,:,:);
+CHsfilt(:,1,:) = CHsfilt(:,2,:);
+CHsfilt(:,end,:) = CHsfilt(:,end-2,:);
+CHsfilt(:,end-1,:) = CHsfilt(:,end-2,:);
+%CHsfilt(end-2:end,:) = ones(3,1)*CHsfilt(end-3,:);
+for i = 1:length(CHsfilt(1,1,:))
+    CHsfilt(:,:,i) = ifft2(fft2(CHsfilt(:,:,i)).*smoother); %filter each frame
+    dum = CHsfilt(:,:,i);
+    CHsfilt(:,:,i) = CHsfilt(:,:,i)-mean(dum(:));
+end
+%CHsfilt = CH;
+
+%Get spatio-temporal gradient 
+% fstart = 2;
+% Chdum = CHsfilt(:,:,fstart:end-1);
+Chdum = CHsfilt;
+
+[dFdx dFdy dFdt] = gradient(Chdum); %change per pixel, and change per frame
+
+fstart = 5; %Ignore motion for first "fstart" frames
+fend = 5; %Ignore motion for last "fend" frames
+
+msperframe = ACQinfo.msPerLine*ACQinfo.linesPerFrame;
+msperbin = str2num(get(G_handles.blockSize,'string'));   
+
+Nbins = round(msperframe/msperbin);
+for i = 1:Nbins
+    if rem(i,2)
+        lperbin(i) = floor(ACQinfo.linesPerFrame/Nbins);
+    else
+        lperbin(i) = ceil(ACQinfo.linesPerFrame/Nbins);
+    end
+end
+
+for i = 1:Nbins
+    
+    yran = ((i-1)*lperbin(i)+1):lperbin(i)*i;    
+    
+    tensX = dFdx(yran,:,:);
+    tensY = dFdy(yran,:,:);
+    tensT = dFdt(yran,:,:);
+
+    for tau = 1:length(tensT(1,1,:))
+%         xdum = tensX(:,:,tau);
+%         ydum = tensY(:,:,tau);
+%         tdum = tensT(:,:,tau);
+        xdum = tensX(3:end-2,3:end-2,tau);  %The edges are usually crappy
+        ydum = tensY(3:end-2,3:end-2,tau);
+        tdum = tensT(3:end-2,3:end-2,tau);
+        
+%         H = [xdum(:) ydum(:)];  %plane should go through the origin: time derivative is zero when spatial derivs are zero        
+%         Vxy = inv(H'*H)*H'*tdum(:);  
+
+        dum = xdum.*ydum.*tdum;
+        id = find(~isnan(dum(:)));
+        pc = princomp([xdum(id) ydum(id) tdum(id)]);
+
+        pc12 = pc(:,1:2)';
+        H = pc12(:,1:2); y = pc12(:,3);
+        Vxy = inv(H'*H)*H'*y;
+
+        VxMat(i,tau) = Vxy(1);  %pixels per frame
+        VyMat(i,tau) = Vxy(2);
+        
+        if tau < fstart | tau > length(tensT(1,1,:))-fend
+            VxMat(i,tau) = 0;
+            VyMat(i,tau) = 0;
+        end
+        
+    end
+%     if i == 2
+%         figure, plot(ydum(:),tdum(:),'.')
+%         hold on
+%         plot([-3000 3000],[-3000 3000]*Vxy(2))
+%         xlim([-500 500]),ylim([-500 500])
+%         Vxy(2)
+%         xlabel('space derivative')
+%         ylabel('time derivative')
+%         asdf
+%     end
+    
+end
+
+
+%Interleave the bins to create the continuous sequence
+Vx = zeros(1,numel(VxMat));
+Vy = zeros(1,numel(VyMat));
+for i = 1:length(VxMat(:,1))
+    
+    Vx(i:Nbins:end) = VxMat(i,:);
+    Vy(i:Nbins:end) = VyMat(i,:);
+    
+end
+
+%median filter gets rid of big transients caused by instability in PCA
+% Vx = medfilt1(Vx,5);
+% Vy = medfilt1(Vy,5);
+
+%This next part gets rid of large transients
+prcXh = prctile(Vx,95); prcXl = prctile(Vx,5);
+idX = find(Vx<prcXh & Vx>prcXl);
+prcYh = prctile(Vy,95); prcYl = prctile(Vy,5);
+idY = find(Vy<prcYh & Vy>prcYl);
+
+idbad = find((Vx-mean(Vx(idX))) > 3*std(Vx(idX)) | (Vx-mean(Vx(idX))) < -3*std(Vx(idX)));
+%Vx(idbad) = 0;
+idbad = find((Vy-mean(Vy(idY))) > 3*std(Vy(idY)) | (Vy-mean(Vy(idY))) < -3*std(Vy(idY)));
+%Vy(idbad) = 0;
+sp = lperbin(1)*ACQinfo.msPerLine/1000;
+tdom = (0:length(Vx)-1)*sp;
+
+%%%%%%%%%%%
+
+%Plot
+
+figure(24)
+subplot(1,2,1), plot(tdom,[Vx' Vy'])
+xlabel('seconds'),ylabel('derivative (pixels/frame)')
+legend('x position','y position')
+hold off
+
+Px = -cumsum(Vx)/Nbins;
+Py = -cumsum(Vy)/Nbins;
+
+%Now correct for slow motion.  This works better when performed on position
+%instead of velocity
+if slowflag
+    Py = LFPfilt(Py,0,1/sp,.3,0);
+    Px = LFPfilt(Px,0,1/sp,.3,0);
+else
+    Py = LFPfilt(Py,0,1/sp,inf,.2);
+    Px = LFPfilt(Px,0,1/sp,inf,.2);
+end
+
+% Nharm = 4;  %Number of assumed harmonics
+% lEst = 3;  %Estimation length in sec
+% Len = round(lEst/sp); 
+% Pxhat = LP(Px,2*Nharm,Len);  %linear prediction
+% Pyhat = LP(Py,2*Nharm,Len);
+Pxhat = Px;
+Pyhat = Py;
+
+sphat = ACQinfo.msPerLine/1000;
+tdomhat = (0:Idim(1)*length(CH(1,1,:))-1)*sphat;
+Pxhat = interp1(tdom,Pxhat,tdomhat);
+Pyhat = interp1(tdom,Pyhat,tdomhat);
+
+id = find(isnan(Pyhat));  %The interpolation sometimes gives NaN for last values
+Pyhat(id) = 0;
+id = find(isnan(Pxhat));
+Pxhat(id) = 0;
+
+Px = Px-trimmean(Px,30);
+Pxhat = Pxhat-trimmean(Pxhat,30);
+Py = Py-trimmean(Py,30);
+Pyhat = Pyhat-trimmean(Pyhat,30);
+
+figure(24),subplot(1,2,2), plot(tdom,[Px' Py'])
+hold on
+plot(tdomhat,[Pxhat' Pyhat'])
+xlabel('seconds'),ylabel('position (pixels)')
+legend('x position','y position')
+drawnow
+hold off
+
+function yhat = LP(y,ord,L) %linear prediction
+
+ypad = [zeros(L+ord-1,1); y(:)];
+
+%yhat = [zeros(1,ord) zeros(1,length(y))];
+H = zeros(L,ord+1);
+for i = 1:length(y) %Regress and estimate for each time point
+    
+   %ypc = [zeros(ord,1); ypad(i:i+L-1)];
+   for k = 1:ord
+       H(:,k) = ypad(i+k-1:i+k+L-2);
+   end
+   H(:,k+1) = ones(length(H(:,1)),1);
+   k = k+1;
+   alpha = inv(H'*H)*H'*ypad(i+k-1:i+k+L-2);
+   
+  % if i > L
+        %yhat(i) = [yhat(i-ord:i-1) 1]*alpha; 
+   %else
+       yhat(i) = H(end,:)*alpha; 
+  % end
+
+end
+
+%yhat(1:ord) = [];
+
+% L = L + 1 - rem(L,2);  %make it odd
+% 
+% ypad = [zeros((L-1)/2,1); y(:); zeros((L-1)/2,1)];
+% 
+% yhat = zeros(size(y));
+% H = zeros(L,ord+1);
+% for i = 1:length(y) %Regress and estimate for each time point
+%     
+%    ypc = [zeros(ord,1); ypad(i:i+L-1)];
+%    for k = 1:ord
+%        H(:,k) = ypc(k:k+L-1);
+%    end
+%    H(:,k+1) = ones(length(H(:,1)),1);
+%    alpha = inv(H'*H)*H'*ypc(ord+1:end);
+%    yhat(i) = H(ceil(L/2),:)*alpha;
+% end
+
+function xfit = polyfitter(x,order)
+
+dom = (0:length(x)-1)';
+
+H = [];
+for i = 1:order   
+    H = [H dom.^i];    
+end
+H = [H ones(length(H(:,1)),1)];
+
+p = inv(H'*H)*H'*x';
+xfit = H*p;
+
+function CH = tempsmooth(tkern,CH)
+
+Idim = size(CH);
+tkern = tkern/sum(tkern);
+kern = zeros(Idim(1),Idim(2),length(tkern));
+for i = 1:length(tkern)
+    kern(:,:,i) = ones(Idim(1),Idim(2))*tkern(i);
+end
+
+smoother = zeros(size(CH));
+smoother(:,:,1:length(tkern)) = kern;
+
+smoother = abs(fft(smoother,[],3));
+CH = ifft(fft(CH,[],3).*smoother,[],3);

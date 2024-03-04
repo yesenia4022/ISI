@@ -1,0 +1,35 @@
+function [mat xdom ydom] = smoothscatter(x,y,sigx,sigy,varargin)
+
+%Make grid
+
+N = 200;
+
+if ~isempty(varargin)
+    xlimits = varargin{1};
+    ylimits = varargin{2};
+elseif min(x) > 0
+    xlimits = [0 max(x)];
+    ylimits = [0 max(y)];
+else
+    xlimits = [min(x) max(x)];
+    ylimits = [min(y) max(y)];
+end
+xdom = linspace(xlimits(1),xlimits(2),N);
+ydom = linspace(ylimits(1),ylimits(2),N);
+
+dx = xdom(2)-xdom(1);
+dy = ydom(2)-ydom(1);
+
+mat = zeros(length(ydom),length(xdom));
+
+for i = 1:length(ydom);
+    id = find(y>ydom(i)-dy/2 & y<ydom(i)+dy/2);
+    h = hist(x(id),xdom);
+    mat(i,:) = h;
+end
+
+[xdomMat ydomMat] = meshgrid(xdom-mean(xdom),ydom-mean(ydom));
+G = exp(-xdomMat.^2/(2*sigx^2)) .* exp(-ydomMat.^2/(2*sigy^2));
+
+%mat = ifft2(abs(fft2(G)).*fft2(mat));
+mat = conv2(mat,G,'same');

@@ -1,0 +1,111 @@
+function [kernPop popBlank CoM pardom] = GetCellTimeKernels(Tens,cellmask)
+
+%This is the same as 'GetCellKernel', but it operates on the tensor and
+%produces the spatio temporal kernel.
+
+%Returns the kernel response,  matrices and corresponding locations for cells
+%in cellmask
+
+global pepANA
+%Each element of the cell array 'f0dum' is the average image for the
+%corresponding condition
+
+for i = 1:2
+    pepsetcondition(i)
+    if ~pepblank        
+        Np = length(pepANA.listOfResults{i}.values);  %get number of looping parameters
+    end
+end
+
+bflag = 0;
+for i = 1:length(Tens)
+    pepsetcondition(i-1)
+    
+    if ~pepblank      
+        for z = 1:Np  %loop through each loop parameter
+            paramlist{z}(i) = pepANA.listOfResults{i}.values{z};
+        end     
+    else
+        for z = 1:Np
+            paramlist{z}(i) = NaN;
+        end
+        bflag = 1;
+    end
+    
+end
+
+for z = 1:Np
+    
+    paramlist{z} = round(paramlist{z}*1000)/1000;
+    
+    pardom{z} = unique(paramlist{z});
+    id = find(isnan(pardom{z}));
+    pardom{z}(id) = [];
+    
+end
+
+
+cmdum = cellmask;  %Cell mask within this ROI
+masklabel = bwlabel(cmdum);
+celldom = unique(masklabel);
+celldom = celldom(2:end); %first element is the neuropil
+Ncell = length(celldom);
+
+[x y] = meshgrid(1:length(cellmask(1,:)),1:length(cellmask(:,1)));
+
+CoM = zeros(Ncell,2);
+for p = 1:Ncell
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    CoM(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+    %idcell{p} = find(masklabel(:) == celldom(p));
+    
+    r = ((x-CoM(p,2)).^2 + (y-CoM(p,1)).^2).^.5;
+    idcell{p} = find(r <= 1);
+    
+end
+
+dim = size(Tens{1});
+
+for i = 1:length(Tens)
+    pepsetcondition(i-1)
+   
+    if ~pepblank
+
+        for z = 1:Np
+            kernloc(z) = find(pardom{z} == paramlist{z}(i));  %location in kernel
+        end
+        
+        %Get kernel value for each cell
+        for p = 1:Ncell
+            for tau = 1:dim(3)
+                imdum = Tens{i}(:,:,tau);
+                R(tau) = mean(imdum(idcell{p}));
+            end
+            
+            switch Np
+                
+                case 1
+                    kernPop{p}(kernloc(1),:) = R;                
+                case 2                    
+                    kernPop{p}(kernloc(1),kernloc(2),:) = R;
+
+            end
+
+        end
+        
+        
+    else
+        for p = 1:Ncell
+            for tau = 1:dim(3)
+                imdum = Tens{i}(:,:,tau);
+                R(tau) = mean(imdum(idcell{p}));
+            end
+            popBlank{p} = R;
+        end
+    end
+end
+
+if ~bflag
+    popBlank = [];
+end
+

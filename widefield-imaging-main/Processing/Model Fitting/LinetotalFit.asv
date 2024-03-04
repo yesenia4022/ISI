@@ -1,0 +1,31 @@
+function [mbest bbest] = LinetotalFit(xx,yy,thetadom,bdom)
+
+yy = yy(:);
+xx = xx(:);
+
+
+for thetaid = 1:length(thetadom)
+
+    thet = thetadom(thetaid);
+
+    for bid = 1:length(bdom)
+
+
+        b = bdom(bid);
+
+        if thet < 45
+            dy = yy - (A*xx + B);
+            dy =abs(dy);
+            E = dy*cos(thet*pi/180);
+        else
+            dx = xx - (yy-B)/A;
+            dx = abs(dx);
+            E = dx*sin(thet*pi/180);
+        end
+
+        err(mid,bid) = sum(abs(E));
+
+    end
+end
+
+[mbest bbest] = find(err == min(err(:)));

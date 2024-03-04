@@ -1,0 +1,135 @@
+function ROIcompareCurve
+
+%compare Tuning curves from multiple ROIs
+
+%ROIs and maps are cell arrays.  e.g. 1 cell array for V1 and 1 cell array for V2
+
+global f0m1 popState bwCell1
+
+hh = [];
+
+%%%%First get the tuning curve tensor and blank response%%%%
+[Tensor pardom blankR] = GetF0Tensor(f0m1);
+[tcPopAll pardom] = GetCellKernels(f0dum,cellmask)
+%%%%%%%%%%%%%%%%%%%%%
+
+%Normalize tuning curve tensor with blank response (deltaF/F)
+% dim = size(Tensor); %preallocate
+% blankRTens = zeros(dim);
+% for i = 1:dim(3)
+%     blankRTens(:,:,i) = blankR;
+% end
+% 
+% Tensor = (Tensor-blankRTens)./blankRTens;
+% clear blankRTens;
+
+ROIs = popState.bwPopAnalysis;
+
+
+NROI = length(ROIs);
+for i = 1:NROI
+    
+    idRoi  
+    IN = inpolygon(CoM,Y, popState.ROIPolyx{i}, popState.ROIPolyy{i});
+  
+    tcPop{i} = tcPopAll(idRoi,:);  %Get subpopulation of tuning curves
+
+    %Get rid of the "unresponsive" cells
+    maxdF{i} = max(tcPop{i}');  %Get max dF/F for each cell
+    id = find(maxdF{i} < popState.dFThresh);
+    tcPop{i}(id,:) = [];
+    NcellR = length(tcPop{i}(:,1));  %no. of responsive cells
+         
+       
+    %Get population stats
+    tcPopMod{i} = zeros(size(tcPop{i}));
+    for p = 1:NcellR
+        
+        tcdum = tcPop{i}(p,:);
+        
+        if strcmp(popState.funcSymbol,'ori')
+            Res = sum(tcdum.*exp(1i*2*pardom*pi/180));
+            Res = Res/sum(tcdum);
+            ang = angle(Res);
+            Opt{i}(p) = (ang+pi*(1-sign(ang)))/2*180/pi;
+            Mag{i}(p) = abs(Res);
+        else
+            [ma Opt{i}(p)] = max(tcdum);
+            Mag{i}(p) = ma;
+        end
+
+        if popState.alignflag
+            idma = find(tcdum == max(tcdum));
+            tcdum = circshift(tcdum,[0 round(length(pardom)/2)-idma]);            
+        end
+        
+        if popState.peakflag
+            tcdum = tcdum/max(tcdum);
+        end
+        
+        tcPopMod{i}(p,:) = tcdum;
+               
+    end
+end
+
+
+
+colorid = 'brgky';
+
+figure,
+for i = 1:NROI
+    muTC{i} = mean(tcPopMod{i});
+    sigTC{i} = std(tcPopMod{i});
+    
+    errorbar(pardom,muTC{i},sigTC{i}/sqrt(length(tcPop{i}(:,1))),colorid(i))
+    
+    plotstr = popState.funcSymbol;
+    plotstr(find(plotstr == '_')) = [];    
+    xlabel(plotstr)
+    hold on
+end
+
+% for i = 1:NROI
+%     id = find(Mag{i}>1.5 | Mag{i}<0);
+%     Mag{i}(id) = [];
+%     Mag{i} = log(Mag{i});
+% end
+
+figure
+for i = 1:NROI
+    subplot(NROI,1,i)
+    %dom = [0:.05:.4]+.025;
+    [hp dom] = hist(maxdF{i},10);
+    bar(dom,hp)
+    h = findobj(gca,'Type','patch');
+    set(h,'FaceColor',colorid(i),'EdgeColor','w')
+    xlabel('deltaF/F'), ylabel('N cells')
+end
+
+figure
+for i = 1:NROI
+    subplot(NROI,1,i)
+    dom = [0:.1:.9]+.05;
+    hp = hist(Mag{i},dom);
+    bar(dom,hp)
+    h = findobj(gca,'Type','patch');
+    set(h,'FaceColor',colorid(i),'EdgeColor','w')
+    xlabel('selectivity'), ylabel('N cells')
+end
+
+if NROI == 2
+    h = ttest2(Mag{2},Mag{1})
+
+    if h == 1
+        sprintf('Significantly different mean selectivity')
+    else
+        sprintf('Not significantly different means')
+    end
+end
+
+
+
+
+
+
+

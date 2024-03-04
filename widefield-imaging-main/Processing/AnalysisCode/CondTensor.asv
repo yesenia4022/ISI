@@ -1,0 +1,84 @@
+function [y1 y2] = CondTensor(Tlim,b)
+
+%Compute the tensor for each condition
+%
+%b is a 2D vector corresponding the the beginning and end of
+%the baseline subtraction images, in milliseconds. e.g. varargin = {[0 500]} sums
+%the images from 0 to .5 seconds for each repetition and then subtracts it
+%from the mean response in the repeat.
+%
+%Tlim is like b, but for the range over which images are averaged
+
+global ACQinfo bsflag
+
+[dum dum2 sync] = GetTrialData(1,1);  %Just to get some sync info
+imsize = length(sync(:,1));
+
+low = min(sync(:))
+high = max(sync(:));
+mid = (low(1)+high(1))/2;
+
+nc = pepgetnorepeats;
+nr = pepgetnorepeats;
+
+y1 = cell(1,nc);
+y2 = cell(1,nc);
+
+%Get sample period (ms/pixel)
+sp = 1000*ACQinfo.msPerLine/ACQinfo.pixelsPerLine %(msPerLine is actually sec/line)
+
+for c = 0:nc-1
+    for r = 0:nr-1
+
+        pepsetrepeat(r);
+        pepsetcondition(c);
+
+        [Ddum1 Ddum2 sync] = GetTrialData(c+1,r+1);
+
+        %sync = reconstructSync(sync);
+        
+        sync = sign(sync-mid);
+
+        %idstart = find(sync(:)<0);  %Syncs are negative pulses?
+        %idstart = idstart(1);
+        idstart = 1;
+
+        avgstart = idstart+Tlim(1)/sp;
+        avgstop = idstart+Tlim(2)/sp;
+
+        imstart = ceil(avgstart/imsize);
+        imstop = ceil(avgstop/imsize);
+        
+        if r = 0
+            y1{c+1} = 0;
+        y1{c+1} = Ddum1(:,imstart:imstop) + y1{c+1};
+        y2{c+1} = Ddum2(:,imstart:imstop) + y1{c+1};
+
+        if bsflag == 1
+
+            avgstart = idstart+Tlim(1)/sp;
+            avgstop = idstart+Tlim(2)/sp;
+
+            imstart = ceil(avgstart/imsize);
+            imstop = ceil(avgstop/imsize);
+
+            bimg1 = mean(Ddum1(:,imstart:imstop),2);
+            bimg2 = mean(Ddum2(:,imstart:imstop),2);
+
+            y1{c+1} = y1{c+1} - bimg1*ones(1,length(y1{c+1}(1,:)));   %% baseline subtraction
+            y2{c+1} = y2{c+1} - bimg2*ones(1,length(y2{c+1}(1,:)));
+        end
+
+    end
+end
+
+rows = ACQinfo.linesPerFrame;
+cols = ACQinfo.pixelsPerLine;
+
+% for r = 1:r
+%     y1{r} = reshape(y1{r},rows,cols);
+%     y2{r} = reshape(y2{r},rows,cols);
+% end
+
+
+

@@ -1,0 +1,98 @@
+function [kernPop popBlank CoM pardom] = GetROIKernels(f0dum,cellmask)
+
+
+%Returns the kernel response matrices and corresponding locations 
+
+global pepANA popState
+%Each element of the cell array 'f0dum' is the average image for the
+%corresponding condition
+
+for i = 1:2
+    pepsetcondition(i)
+    if ~pepblank        
+        Np = length(pepANA.listOfResults{i}.values);  %get number of looping parameters
+        for z = 1:Np
+            if strcmp(pepANA.listOfResults{i+1}.symbols(z),popState.funcSymbol)
+                paramID = z;  %The parameter to analyze directly
+            end
+        end
+    end
+end
+
+for i = 1:length(f0dum)
+    pepsetcondition(i-1)
+    
+    if ~pepblank      
+        for z = 1:Np  %loop through each loop parameter
+            paramlist{z}(i) = pepANA.listOfResults{i}.values{z};
+        end     
+    else
+        for z = 1:Np
+            paramlist{z}(i) = NaN;
+        end
+    end
+    
+end
+
+for z = 1:Np
+    
+    paramlist{z} = round(paramlist{z}*1000)/1000;
+    
+    pardom{z} = unique(paramlist{z});
+    id = find(isnan(pardom{z}));
+    pardom{z}(id) = [];
+    
+end
+
+
+cmdum = cellmask;  %Cell mask within this ROI
+masklabel = bwlabel(cmdum);
+celldom = unique(masklabel);
+celldom = celldom(2:end); %first element is the neuropil
+Ncell = length(celldom);
+
+CoM = zeros(Ncell,2);
+for p = 1:Ncell
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    CoM(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+    
+    idcell{p} = find(masklabel(:) == celldom(p));
+end
+
+for i = 1:length(f0dum)
+    pepsetcondition(i-1)
+   
+    if ~pepblank
+
+        for z = 1:Np
+            kernloc(z) = find(pardom{z} == paramlist{z}(i));  %location in kernel
+        end
+        
+        %Get kernel value for each cell
+        for p = 1:Ncell
+
+            R = mean(f0dum{i}(idcell{p}));
+            
+            switch Np
+                
+                case 1
+                    kernPop(kernloc(1),p) = R;                
+                case 2                    
+                    kernPop(kernloc(1),kernloc(2),p) = R;
+
+            end
+
+        end
+        
+        
+    else
+        for p = 1:Ncell
+                  
+            popBlank(p) = mean(f0dum{i}(idcell{p}));
+
+        end
+    end
+end
+
+
+

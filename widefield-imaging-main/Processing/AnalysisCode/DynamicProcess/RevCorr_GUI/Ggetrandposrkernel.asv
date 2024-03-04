@@ -1,0 +1,219 @@
+function [kern kernblank countmat countmatblank] = Ggetrandposkernel(cellMat,synctimes,bwCell1,tauN,hh)
+
+%Keep cellMat as an input because it filters it, aand I don't want to
+%create a new variable of the same size
+
+%3 takes the cell time courses as input, instead of all the images. 
+
+global ACQinfo Analyzer G_handles
+
+%%%%
+
+%blankNorm = get(G_handles,'blankNorm','value');
+blankNorm = 1;
+masklabel = bwlabel(bwCell1);
+celldom = unique(masklabel);
+celldom = celldom(1:end);
+
+%%%%
+
+ptime = ACQinfo.msPerLine/ACQinfo.pixelsPerLine;  %pixel time (ms)
+
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine; 
+dtau = acqPeriod;
+Ntau = round(tauN/acqPeriod);
+taudom = 0:dtau:dtau*Ntau;
+
+
+hper = getparam('h_per');
+%hper = 1; %in my stimulus code, the sequences have only one value for each
+%presentation, so you can't set hper to one
+
+
+expt = [Analyzer.M.anim '_' Analyzer.M.unit '_' Analyzer.M.expt]
+load(['C:\2p_data\' Analyzer.M.anim '\log_files\' expt])
+%load(['F:\neurostuff\log_files\' expt])
+rseeds = eval(Analyzer.L.param{1}{2});
+
+Tf = 1000/frate;  %Frame period in ms (frate obtained from log file) 
+Tupdate = Tf*hper;
+
+
+for s = 1:length(rseeds)
+    
+    eval(['colorS = rseed' num2str(s) '.colorseq;']);
+    eval(['phaseS = rseed' num2str(s) '.phaseseq;']);
+    eval(['sfS = rseed' num2str(s) '.sfseq;']);
+    eval(['oriS = rseed' num2str(s) '.oriseq;']);    
+    
+    colorseq{s} = domains.colordom(colorS);   
+    phaseseq{s} =  domains.phasedom(phaseS);  
+    sfseq{s} =  sfdom_dum(sfS);     
+    oriseq{s} =  domains.oridom(oriS);  
+ 
+end
+
+
+%%%%%%%%%%%%%%%%%%%
+oridom = domains.oridom;
+sfdom = domains.sfdom;
+phasedom = domains.phasedom;
+colordom = domains.colordom;
+
+%Filter first (a little faster)
+
+if ~isempty(hh)
+    hh = ones(length(cellMat{1}(:,1)),1,'single')*hh(:)';
+
+    for T = 1:length(cellMat)        
+        %mu = mean(tcourse);
+        %cellMat{T} = LFPfilt(cellMat{T},0,1000/acqPeriod,4,.05);
+        
+        cellMat{T} = ifft(hh.*fft(cellMat{T},[],2),[],2);
+
+    end
+    
+end
+
+Ncell = length(celldom);
+NT = getnotrials;
+tcoursedum = 0;
+figure
+for p = 1:Ncell
+
+    [idcelly idcellx] = find(masklabel == celldom(p));
+
+    CoM = [mean(idcelly) mean(idcellx)];  %center of mass
+
+    tau_xy = (CoM(1)-1)*ACQinfo.msPerLine + ptime*CoM(2);
+
+    countmat{p} = zeros(length(oridom),length(sfdom),length(phasedom),length(colordom),length(taudom));
+    kern{p} = zeros(length(oridom),length(sfdom),length(phasedom),length(colordom),length(taudom));
+    countmatblank{p} = zeros(1,length(taudom));
+    kernblank{p} = zeros(1,length(taudom));
+    
+    trialdom = 1:length(cellMat);
+
+    for trialid = 1:length(trialdom)
+        
+        T = trialdom(trialid);
+        dsync = diff(synctimes{T});
+        if any(abs(dsync-Tupdate/1000)>100)
+            'Warning: syncs may be messed up'
+        end
+
+        tcourse = cellMat{T}(p,:);
+        
+%        tcourse = LFPfilt(tcourse,0,1000/acqPeriod,4,.05);
+%                 fdom = linspace(0,1000/acqPeriod,length(tcourse)+1);
+%                 fdom = fdom(1:end-1);
+%                 figure,plot(fdom,abs(fft(tcoursedum-mean(tcoursedum))))
+     
+
+        tcourse = zscore(tcourse);
+        
+        tdom = (0:length(tcourse)-1)*acqPeriod;
+        %tdom_pix = tdom + tau_xy - ACQinfo.stimPredelay*1000;   %time domain of the pixel relative to onset of first stimulus
+        tdom_pix = tdom + tau_xy;
+        
+        %idbase = find(tdom_pix<synctimes{T}(1)*1000 | tdom_pix>(synctimes{T}(end)*1000+500));
+        %bLine = mean(tcourse(idbase));
+        
+        %tcourse = (tcourse-bLine)/bLine;
+        
+        [cond] = getcondrep(T);
+        
+        seedno = Analyzer.loops.conds{cond}.val{1};
+
+        oriseqdum = oriseq{seedno};
+        sfseqdum = sfseq{seedno};       
+        phaseseqdum = phaseseq{seedno};  
+        colorseqdum = colorseq{seedno}; 
+        
+        
+
+        for ori = 1:length(oridom)
+            for pos = 1:length(sfdom)
+                for bw = 1:length(phasedom)
+                    for color = 1:length(colordom)
+                        
+                        id = find(oriseqdum == oridom(ori) & sfseqdum == sfdom(sf) & phaseseqdum == phasedom(phase)& colorseqdum == colordom(color));
+                        
+                        %stimes = (id-1)*Tupdate; %Stimulus times
+                        stimes = synctimes{T}(id)*1000;
+                        
+                        
+                        for i = 1:length(stimes)
+
+                            idx1 = find(tdom_pix>=stimes(i)+taudom(1)-dtau/2 & tdom_pix<stimes(i)+taudom(1)+dtau/2);
+                            idx1 = idx1(1);
+                            tpiece = idx1:idx1+length(taudom)-1;
+                            
+                            if tpiece(1)>0 & tpiece(end)<length(tcourse)
+                                kern{p}(ori,sf,phase,color,:) = squeeze(kern{p}(ori,sf,phase,color,:)) + squeeze(tcourse(tpiece))';
+                                countmat{p}(ori,sf,phase,color,:) = countmat{p}(ori,sf,phase,color,:) + 1;
+                            end
+                            
+                        end
+                    end
+                end
+            end
+        end
+        
+        id = find(isnan(oriseqdum));
+        stimes = synctimes{T}(id)*1000;
+        
+        for i = 1:length(stimes)
+            
+            idx1 = find(tdom_pix>=stimes(i)+taudom(1)-dtau/2 & tdom_pix<stimes(i)+taudom(1)+dtau/2);
+            idx1 = idx1(1);
+            tpiece = idx1:idx1+length(taudom)-1;
+            
+            if tpiece(1)>0 & tpiece(end)<length(tcourse)
+                kernblank{p} = kernblank{p} + tcourse(tpiece);
+                countmatblank{p} = countmatblank{p} + 1;
+            end
+        end
+            
+        
+    end
+
+
+    kern{p} = kern{p}./countmat{p};
+    kernblank{p} = kernblank{p}./countmatblank{p};
+    
+    if blankNorm
+        for ori = 1:length(oridom)
+            for sf = 1:length(sfdom)
+                for phase = 1:length(phasedom)
+                    for color = 1:length(colordom)
+                        
+                        kern{p}(ori,sf,phase,color,:) = (squeeze(kern{p}(ori,sf,phase,color,:)) - kernblank{p}(:));
+                        
+                    end
+                end
+            end
+        end
+    end
+
+    kernplot = mean(kern{p}(:,1:end-1,:,:,:),3);  %mean across phase
+    kernplot = mean(kernplot,4); %mean across color
+    
+    %kernblank = kern{p}(end,:);
+    
+    %kernplot = ifft(fft(kernplot).*abs(fft(kernsmooth)));
+
+    subplot(ceil(sqrt(Ncell)),ceil(sqrt(Ncell)),p)
+    
+    kernplot = squeeze(nanmean(kernplot,2));  %mean across spatial freqency
+    blankmat = ones(length(kernplot(:,1)),1)*kernblank{p}(:)';
+
+    %kernplot = (kernplot-blankmat);
+    %kernplot = [kernplot; kernblank{p}(:)'];
+    
+    imagesc(kernplot)
+    
+    drawnow
+end
+
+

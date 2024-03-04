@@ -1,0 +1,198 @@
+function [tcmat tcourseHi tcourseLo primDom blank legStr] = getcelldata(pos,W)
+
+%A modified get pixel data... this uses the cell mask.
+
+global Analyzer symbolInfo cellS maskS
+
+masklabel = bwlabel(maskS.bwCell1);
+celldom = unique(masklabel);
+
+cellID = masklabel(pos(2),pos(1));
+
+nc = getnoconditions;
+
+bflag = stimblank(getnoconditions); %if a blank exists in this experiment
+Nloop = nc;
+blank = [];
+if bflag
+    Nloop = nc-1;    
+    dum = f0m{end}(yran,xran);
+    blank = mean(dum(:));
+end
+
+Nsym = length(Analyzer.loops.conds{1}.symbol);  %number of looping parameters
+
+for i = 1:Nsym
+    allDom{i} = getdomain(symbolInfo.str{i});
+    dim(i) = length(allDom{i});
+end
+
+
+cellS.muTime{i}
+cellS.mu{i}
+
+figure
+for i = 1:length(cellS.muTime)
+   
+    for j = 1:Nsym
+        val = Analyzer.loops.conds{i}.val{j}
+    
+    
+end
+
+k = 1;
+figure
+for i = 1:dim(1)
+    for j = 1:dim(2)
+
+        subplot(dim(1),dim(2),k)
+
+        plot(cellS.muTime{})
+        k = k+1;
+    end
+end
+    
+    
+for i = 1:Nloop
+    
+    dum = f0m{i}(yran,xran);
+    tc(i) = mean(dum(:)); 
+    if varflag
+        dum = f0m_var{i+1}(yran,xran);
+        tc_var(i) = mean(dum(:));
+    end
+    
+end
+
+
+for i = 1:Nsym
+    allDom{i} = getdomain(symbolInfo.str{i});
+    dim(i) = length(allDom{i});
+end
+primDom = allDom{1};
+
+%Create Ndim kernel template
+
+switch Nsym
+    case 1
+        tcmat = zeros(dim(1),1);
+        tcourseArray = cell(dim(1),1);
+    case 2
+        tcmat = zeros(dim(1),dim(2));
+        tcourseArray = cell(dim(1),dim(2));
+    case 3
+        tcmat = zeros(dim(1),dim(2),dim(3));
+        tcourseArray = cell(dim(1),dim(2),dim(3));
+end
+
+
+%Insert values at the correct location
+for i = 1:length(tc)
+    tcoursedum = squeeze(sum(sum(Tens{i}(yran,xran,:),1),2))/nopix;
+    vals = Analyzer.loops.conds{i}.val;
+    clear loc
+    for j = 1:Nsym
+        loc(j) = find(allDom{j} == vals{symbolInfo.ID(j)});
+    end
+    
+    switch Nsym
+        case 1
+            tcmat(loc(1)) = tc(i);
+            tcourseArray{loc(1)} = tcoursedum;
+        case 2
+            tcmat(loc(1),loc(2)) = tc(i);
+            tcourseArray{loc(1),loc(2)} = tcoursedum;
+        case 3
+            tcmat(loc(1),loc(2),loc(3)) = tc(i);
+            tcourseArray{loc(1),loc(2),loc(3)} = tcoursedum;
+    end
+end
+
+legStr{1} = 'blank';
+if Nsym == 3
+    
+    oppCollapse = symbolInfo.Collapse(2);
+    
+    switch oppCollapse
+        
+        case 1  %Take slice at maximum
+            
+            [v id] = find(tcmat(:) == max(tcmat(:)));
+            zloc = ceil(id/(dim(1)*dim(2)));
+            
+            tcmat = squeeze(tcmat(:,:,zloc));            
+            tcourseArray = tcourseArray(:,:,zloc);   %Cell arrays can be indexed like this apparently
+            
+        case 2  %Take mean over opposing parameters
+            
+            tcmat = squeeze(mean(tcmat,3));  %Take mean across last dimension       
+            
+            for i = 1:dim(1)
+                for j = 1:dim(2)
+                    tcourseNew{i,j} = 0;
+                    for k = 1:dim(3)
+                        tcourseNew{i,j} = tcourseNew{i,j} + tcourseArray{i,j,k}/dim(3);
+                    end
+                end
+            end
+            tcourseArray = tcourseNew;
+            clear tcourseNew
+            
+    end
+       
+end
+
+%'tcmat' should have at most 2 dimensions at this point
+if Nsym > 1
+    oppCollapse = symbolInfo.Collapse(1);    
+    
+    switch oppCollapse
+        
+        case 1  %Take slice at maximum
+            
+            [idy idx] = find(tcmat == max(tcmat(:)));
+            tcmat = tcmat(:,idx);
+            tcourseArray = tcourseArray(:,idx);
+            
+            legStr{2} = num2str(round(allDom{2}(idx)*100)/100);
+            
+        case 2  %Take mean over opposing parameters
+            
+            tcmat = squeeze(mean(tcmat,2));  %Take mean across last dimension
+            
+            for i = 1:dim(1)
+                tcourseNew{i} = 0;
+                for j = 1:dim(2)
+                    tcourseNew{i} = tcourseNew{i} + tcourseArray{i,j}/dim(2);                    
+                end
+            end
+            tcourseArray = tcourseNew;
+            clear tcourseNew
+            
+            legStr{2} = 'All';
+            
+        case 3  %Display all tuning curves, and take mean time course
+            for k = 1:length(allDom{2})
+                legStr{k+1} = num2str(round(allDom{2}(k)*100)/100);
+            end
+            %Don't do anything
+
+    end 
+
+end
+
+ 
+d = size(tcmat);
+if d(1) == 1 || d(2) == 1
+    [xma] = find(tcmat == max(tcmat(:)));
+    [xmi] = find(tcmat == min(tcmat(:)));
+    
+    tcourseHi = tcourseArray{xma};
+    tcourseLo = tcourseArray{xmi};
+else
+    [yma xma] = find(tcmat == max(tcmat(:)));
+    [ymi xmi] = find(tcmat == min(tcmat(:)));
+    
+    tcourseHi = tcourseArray{yma,xma};
+    tcourseLo = tcourseArray{ymi,xmi};
+end

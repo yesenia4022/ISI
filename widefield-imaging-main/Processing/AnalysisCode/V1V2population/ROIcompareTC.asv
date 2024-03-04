@@ -1,0 +1,104 @@
+function ROIcompareTC(ROIs,cellmask)
+
+%compare
+
+%ROIs and maps are cell arrays.  e.g. 1 cell array for V1 and 1 cell array for V2
+
+global f0m1
+
+hh = [];
+
+%%%%First get the tuning curve tensor%%%%
+[Tensor oridom] = GetOriTensor(f0m1,hh);
+%%%%%%%%%%%%%%%%%%%%%
+
+
+
+NROI = length(ROIs);
+for i = 1:NROI
+
+    cmdum = ROIs{i}.*cellmask;  %Cell mask within this ROI
+    masklabel = bwlabel(cmdum);
+    celldom = unique(masklabel);
+    celldom = celldom(1:end);
+    Ncell = length(celldom);
+
+    %Get the tuning curves
+    for p = 1:Ncell
+
+        [idcelly idcellx] = find(masklabel == celldom(p));
+        idcell = find(masklabel(:) == celldom(p));
+        CoM{i}(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+
+        for ori = 1:length(oridom)
+            dum = Tensor(:,:,ori);
+            tcPop{i}(p,ori) = mean(dum(idcell));
+        end
+
+    end
+    
+    
+    %Get population stats
+    tcPopshift{i} = zeros(size(tcPop{i}));
+    for p = 1:Ncell
+        
+        tcdum = tcPop{i}(p,:);
+        
+        Res = sum(tcdum.*exp(1i*2*oridom*pi/180));
+        Res = Res/sum(tcdum);
+        ang = angle(Res);
+        Ang{i}(p) = (ang+pi*(1-sign(ang)))/2*180/pi;
+        Mag{i}(p) = abs(Res);
+        
+        idma = find(tcdum == max(tcdum));
+        tcdum = circshift(tcdum,[0 round(length(oridom)/2)-idma]);
+        tcPopshift{i}(p,:) = tcdum;
+               
+    end
+end
+
+muTC1 = mean(tcPopshift{1});
+muTC2 = mean(tcPopshift{2});
+sigTC1 = std(tcPopshift{1});
+sigTC2 = std(tcPopshift{2});
+
+figure,errorbar(oridom,muTC1,sigTC1/sqrt(length(tcPop{1}(:,1))))
+hold on, errorbar(oridom,muTC2,sigTC2/sqrt(length(tcPop{2}(:,1))), 'r')
+legend('LM','V1')
+
+
+id = find(Mag{1}>1.5 | Mag{1}<0);
+Mag{1}(id) = [];
+id = find(Mag{2}>1.5 | Mag{2}<0);
+Mag{2}(id) = [];
+
+% Mag{1} = log(Mag{1});
+% Mag{2} = log(Mag{2});
+
+figure,
+subplot(2,1,1)
+hist(Mag{1},10);
+h = findobj(gca,'Type','patch');
+set(h,'FaceColor','b','EdgeColor','w')
+xlabel('orientation selectivity'), ylabel('N cells'), legend('LM')
+
+subplot(2,1,2)
+hist(Mag{2},10);
+h = findobj(gca,'Type','patch');
+set(h,'FaceColor','r','EdgeColor','w')
+xlabel('orientation selectivity'), ylabel('N cells'), legend('V1')
+
+h = ttest2(Mag{2},Mag{1})
+
+if h == 1    
+    sprintf('Significantly different means')    
+else    
+    sprintf('Not significantly different means')    
+end
+
+
+
+
+
+
+

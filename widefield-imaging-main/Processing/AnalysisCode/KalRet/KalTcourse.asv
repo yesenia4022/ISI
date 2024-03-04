@@ -1,0 +1,83 @@
+function y = KalTcourse(cond)
+
+%% Compute the F1 for one condition
+
+global pepANA ACQinfo
+
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine;  %sec per acquired frame
+Npix = ACQinfo.linesPerFrame*ACQinfo.pixelsPerLine;
+
+pepsetcondition(cond);
+nr = pepgetnorepeats;
+%for r = 0:0
+for(r=0:nr-1)
+    pepsetrepeat(r)
+    r
+    clear CHs
+    CHsSync = GetTrialData([0 0 1]);
+    Nframes = length(CHsSync{1}(1,1,:));
+    
+    dim = size(CHsSync{1});
+    synccourse = NaN*ones(prod(dim),1);
+    for i = 1:Nframes
+        dum = CHsSync{1}(:,:,i)';
+        synccourse(1+(i-1)*dim(2)*dim(1):i*dim(2)*dim(1)) = dum(:);
+    end
+    
+    clear CHsSync
+    
+    synctimes = getsynctimes(synccourse)/1000;
+    
+    clear synccourse dum
+    
+    T = mean(diff(synctimes));
+    
+    framest = 0:Nframes-1;
+    framest = framest*acqPeriod;
+    frameang = NaN*ones(1,length(framest));
+    
+    for i = 1:length(synctimes)
+        id = find(framest>=synctimes(i) & framest<synctimes(i)+T);
+        frameang(id) = 2*pi*(framest(id) - synctimes(i))/T;
+    end
+
+    idx = find(~isnan(frameang));
+    
+    CHs = GetTrialData([1 0 0]);
+    
+    muIm = mean(CHs{1}(:,:,idx),3);
+    
+    phasedom = 0:5:360;
+
+    Tens = zeros(dim);
+    c = zeros(dim);
+    tic
+    for j=1:length(idx)
+        
+        ang = frameang(idx(j))*180/pi;
+        [dum iddom] = min(abs(phasedom-ang));
+        
+        Tens(:,:,iddom) = Tens(:,:,iddom) + img;
+        
+        counter(iddom) = counter(iddom) + 1;
+        
+    end
+    toc
+    
+    pixperimage = ACQinfo.linesPerFrame*ACQinfo.pixelsPerLine;
+    secperpix = ACQinfo.msPerLine/ACQinfo.pixelsPerLine;
+    delaymask = 0:pixperimage-1;
+    delaymask = reshape(delaymask',ACQinfo.pixelsPerLine,ACQinfo.linesPerFrame)';
+    delaymask = delaymask*secperpix/T*2*pi;  %Scan delay for each pixel in radians
+
+    acc = acc.*exp(1i*delaymask);
+
+  %% acc = 2*acc ./ (length(frames(1):frames(2))); %Normalize for f1 amplitude
+   acc = 2*acc ./ length(idx); %Normalize for f1 amplitude 
+
+   y{r+1} = acc;
+
+end
+
+    
+    

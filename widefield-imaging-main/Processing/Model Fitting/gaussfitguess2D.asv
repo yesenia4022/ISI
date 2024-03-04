@@ -1,0 +1,10 @@
+
+function G = gaussfitguess2D
+
+%Double check Initial guesses
+
+global RF;
+
+[id]
+
+G = [idx1 idx2 5 5 min(RF(:)) max(RF(:))-min(RF(:))];

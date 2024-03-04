@@ -1,0 +1,101 @@
+function [mbest nbest] = getShiftVals(im,temp,expSh)
+
+% expSh is the expected amount of shift.  e.g. if the output was
+% [1 -2] in the last trial, this could be used for expSh here.
+
+global G_handles maskS
+% dim = size(Tens);
+% hh = hann(dim(1))*hann(dim(2))';
+% hh = hh/sum(hh);
+% delta = zeros(dim(1),dim(2));
+% [ma id] = max(hh(:));
+% delta(id(1)) = 1;
+% hh = delta-hh; %high pass
+
+%Get rid of the edges
+im = im(3:end-2,3:end-2);
+temp = temp(3:end-2,3:end-2);
+mask = ones(size(temp));
+%mask = maskS.bw(3:end-2,3:end-2);
+%mask = maskS.bw(:,:);
+
+dim = size(im);
+
+
+W = 10;  %Search range in pixelas
+
+%Create border of zeros to account for fft "wrap-around"
+
+%mu = mean(im(:));
+%This padding fucks it up... don't know why.
+% pad = W; 
+% im(:,1:pad) = mu;
+% im(:,end-pad:end) = mu;
+% im(1:pad,:) = mu;
+% im(end-pad:end,:) = mu;
+
+% dim = size(im);
+% Win = hann(dim(1))*hann(dim(2))';
+% im = im.*Win;
+% temp = temp.*Win;
+
+im = fliplr(flipud(im));
+
+temp = temp-min(temp(:));
+temp = temp.*mask;
+%If I don't make a mask, at least get rid of the edges
+
+% figure,imagesc(bw)
+
+CC = real(ifft2(fft2(im).*fft2(temp)));
+
+CC = fftshift(CC);
+
+%Set all but center to zero so that we don't use extreme outliers
+
+searchmask = zeros(size(CC));
+
+[x y] = meshgrid(1:dim(2),1:dim(1));
+% x = x-dim(2)/2;
+% y = y-dim(1)/2;
+x = x-dim(2)/2 + expSh(2);
+y = y-dim(1)/2  + expSh(1);
+r = sqrt(x.^2 + y.^2);
+maskid = find(r<=W);
+
+searchmask(maskid) = 1;
+% sig = W;
+% searchmask = exp(-r.^2/(2*sig^2));
+% searchmask = searchmask/sum(searchmask(:));
+CC2 = CC.*searchmask;
+
+[mbest nbest] = find(CC2 == max(CC2(:)));
+mbest = mbest(1);
+nbest = nbest(1);
+
+mbest = dim(1)/2-mbest;
+nbest = dim(2)/2-nbest;
+
+%%%%%%%%%%%%%%%%%%%%%%
+%Compute center of mass (more refined estimate)
+[x y] = meshgrid(1:dim(2),1:dim(1));
+x = x-dim(2)/2 + nbest;
+y = y-dim(1)/2  + mbest;
+r = sqrt(x.^2 + y.^2);
+maskid = find(r<=W);
+searchmask = zeros(size(CC));
+searchmask(maskid) = 1;
+CC2 = CC.*searchmask;
+
+CC2(maskid) = CC2(maskid) - min(CC2(maskid));
+
+xmarg = mean(CC2);
+xmarg = xmarg/sum(xmarg);
+nbest = sum(xmarg.*(1:dim(2)));
+
+ymarg = mean(CC2,2)';
+ymarg = ymarg/sum(ymarg);
+mbest = sum(ymarg.*(1:dim(1)));
+
+mbest = double(dim(1)/2-mbest);
+nbest = double(dim(2)/2-nbest);

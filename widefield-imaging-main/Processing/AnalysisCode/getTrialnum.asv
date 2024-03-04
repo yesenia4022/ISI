@@ -1,0 +1,10 @@
+function trial = getTrialnum(cond,rep)
+
+pepsetcondition
+pepsetrepeat(cond)
+
+filename = 'c:\neurodata\XX0\u000_000.pepanalyzer'
+
+load('-mat',filename)
+pepANA = struct(a);
+trial = pepANA.listOfResults{cond}.repeat{rep}.timeTag + 1;

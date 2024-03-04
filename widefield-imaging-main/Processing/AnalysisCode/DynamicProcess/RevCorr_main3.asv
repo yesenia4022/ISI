@@ -1,0 +1,105 @@
+% slow movement correction
+CH = GetTrialData([1 1 0 0],1);
+[Px_fast Py_fast] = getTrialMotion3(CH{2});
+temp1 = makeGeoTrx(CH{1},Px_fast,Py_fast);
+temp2 = makeGeoTrx(CH{2},Px_fast,Py_fast);
+temp1 = mean(temp1(:,:,2:end-2),3);  %Template for trial-to-trial motion correction
+temp2 = mean(temp2(:,:,2:end-2),3);  %Template for trial-to-trial motion correction
+
+bwCell1 = MakeCellMask(11,.8,3,5,temp1);
+
+NT = getnotrials;
+
+dtau = 250;
+taudom = 0:dtau:2000;  %This needs to have an element at 0
+
+
+%%
+geoflag = 0
+clear CHs CH cellMat
+for T = 1:NT
+    T
+    CHs = GetTrialData([1 1 0 0],T);  %load second channel because it usually makes for better motion correction
+    
+    if geoflag
+        [Px_fast Py_fast] = getTrialMotion3(CHs{2});
+        CHs{1} = makeGeoTrx(CHs{1},Px_fast,Py_fast);
+    end
+    
+    imdum = mean(CHs{1}(:,:,2:end-2),3);
+    [mbest nbest] = getShiftVals(imdum,temp1);  %get the transformation for this trial
+    for z = 1:length(CHs{1}(1,1,:))
+        CHs{1}(:,:,z) = circshift(CHs{1}(:,:,z),[-mbest -nbest]); %transform
+    end
+    
+    %Get time course for each cell
+    
+   
+    %[cellMat{T}] = getGeoTrxTimeCourse(CHs{1},Px_fast,Py_fast,bwCell1);
+    
+    [cellMat{T}] = getCelltimecourse(CHs{1},bwCell1);
+    
+    %
+   
+    
+end
+
+%% Get sync pulses
+global ACQinfo
+Fs = 1000*ACQinfo.pixelsPerLine/ACQinfo.msPerLine;
+for T = 1:NT  
+    T    
+    CH = GetTrialData([0 0 1 0],T);
+    dim = size(CH{1});
+    syncwave = zeros(dim(2),dim(1),dim(3));
+    %%%%
+    for i = 1:length(CH{1}(1,1,:))
+       syncwave(:,:,i) = CH{1}(:,:,i)'; 
+    end
+    
+    synctimes{T} = getFlashGraterSynctimes_CRT(syncwave(:),Fs);     
+end
+
+%%
+
+Ntau = 9;
+[kern kernblank countmat countmatblank] = getrevcorrkernel5(cellMat,synctimes,bwCell1,Ntau);
+kernelplots2(kern,bwCell1,Ntau);
+
+kernelplots2(kernall,bwCell1,taudom);
+
+RF = MakeRF2(kern,bwCell1,Ntau);
+%%
+
+
+
+
+
+
+clear countall kernall 
+for T = 1:length(CHs)
+    T
+     cond = getcondrep(T);
+    [kern count] = getrevcorrkernel2(CHs{T}{1},bwCell1,taudom,cond);    
+    
+    if ~exist('countall')        
+        for p = 1:length(kern)
+            countall{p} = zeros(size(kern{p}));
+            kernall{p} = zeros(size(kern{p}));
+        end
+    end
+    
+    for p = 1:length(kern)        
+        countall{p} = countall{p} + count{p};      
+        kernall{p} = kernall{p} + kern{p}; 
+    end
+    
+end
+%%
+for p = 1:length(kern)
+    
+   kernall{p} = kernall{p}./countall{p}; 
+    
+end
+
+kernelplots2(kernall,bwCell1,taudom);

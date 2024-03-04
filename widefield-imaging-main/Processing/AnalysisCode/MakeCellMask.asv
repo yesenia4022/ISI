@@ -1,0 +1,85 @@
+function [bwCell1 bwCell2] = MakeCellMask(msize,mthresh,mmorph,minsize)
+
+global ACQinfo processF0_handles
+
+%%%Estimate cell diameter in pixels%%%
+
+%constants
+micpercell = 15; %approximate cell diameter in microns
+micpervolt = 350/2.5; %depends on objective
+
+micW = micpervolt*ACQinfo.scanAmplitudeX/ACQinfo.zoomFactor;  %FOV micron width 
+micperpixel = micW/ACQinfo.pixelsPerLine; %microns per pixel
+ 
+
+cellD = micperpixel/micpercell;  %Approximate diameter of a cell in pixels
+cellD = cellD*3;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+nc = getnoconditions;
+
+CHs = GetTrialData([1 1 0 0],1);
+
+for i = 1:2
+if get(processF0_handles.fastMotionFlag,'value')
+    [Px_fast Py_fast] = getTrialMotion3(CHs{i});
+    CHs{1} = makeGeoTrx(CHs{1},Px_fast,Py_fast);
+end
+
+CH1 = mean(CHs{1}(:,:,2:end-1),3);
+CH2 = mean(CHs{2}(:,:,2:end-1),3);
+
+%Create binary image by thresholding after local Z-score:
+figure, imagesc(CH1), colormap gray
+figure, imagesc(CH2), colormap gray
+
+deb = 0;
+if deb
+    %[CH1] = deconvblind(CH1, hanning(deb)*hanning(deb)');
+    %[CH2] = deconvblind(CH2, hanning(deb)*hanning(deb)');
+    [CH1] = deconvblind(CH1, ones(deb,deb));
+    [CH2] = deconvblind(CH2, ones(deb,deb));
+end
+
+[dum bwCell1] = LocalZ(CH1,round(msize),mmorph,mthresh);  
+[dum bwCell2] = LocalZ(CH2,round(msize),mmorph,mthresh);
+
+SE = STREL('disk',mmorph,0);
+
+if mmorph ~= 0
+    bwCell1 = imopen(bwCell1,SE);
+    bwCell2 = imopen(bwCell2,SE);
+    
+    D = mmorph+1;
+    bwCell1 = bwCell1(1:D:end,1:D:end);
+    bwCell2 = bwCell2(1:D:end,1:D:end);
+end
+
+%Get rid of cells that are smaller than minsize
+if minsize > 0
+    
+    celllabel = bwlabel(bwCell1);
+    cellid = unique(celllabel);
+    for i = 2:length(cellid)
+        id = find(cellid(i) == celllabel);
+        if length(id) < minsize
+            bwCell1(id) = 0;
+        end
+    end
+    
+    celllabel = bwlabel(bwCell2);
+    cellid = unique(celllabel);
+    for i = 2:length(cellid)
+        id = find(cellid(i) == celllabel);
+        if length(id) < minsize
+            bwCell2(id) = 0;
+        end
+    end
+    
+end
+
+figure,imagesc(bwCell1), colormap gray
+figure,imagesc(bwCell2), colormap gray
+
+

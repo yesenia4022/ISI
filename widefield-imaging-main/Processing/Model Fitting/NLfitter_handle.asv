@@ -1,0 +1,17 @@
+function err = NLfitter_handle(param)
+
+global yy xx;
+
+k = param(1);
+T = param(2);
+B = param(3);
+
+param(1)*phi(domu-param(2)) + param(3)
+ffit = A*exp(-xx*alp) + B;
+
+%id = find(~isnan(yy.*ffit));
+%err = trimmean((ffit(id)-yy(id)).^2,20);
+
+err = nanmean((ffit-yy).^2);
+
+

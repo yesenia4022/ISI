@@ -1,0 +1,26 @@
+function G = DoGfitguess
+
+%Double check Initial guesses
+
+global RF;
+
+f = RF;
+
+[ma id] = max(f);
+mi = prctile(f,.1);
+dAmp = f(1)-f(end);
+base = f()
+
+sig1 = id;
+Amp1 = ma-base;
+
+sig2 = sig1*.8;
+Amp2 = Amp1;
+
+base = f(end);
+
+
+
+%G = [idx length(f)/6 max(RF)-min(RF) min(RF)];
+G = [sig1 Amp1 sig2 Amp2 base];
+%G = [length(f)/2 1 0 0];

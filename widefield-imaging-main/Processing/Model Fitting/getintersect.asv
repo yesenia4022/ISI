@@ -1,0 +1,17 @@
+function intersect = getintersect(satel,dir)
+
+global S D
+
+%%%search%%%
+
+S = satel;
+D = dir
+intersect = intersectfitter;
+%%%%%%%%%%%
+
+
+
+
+
+
+

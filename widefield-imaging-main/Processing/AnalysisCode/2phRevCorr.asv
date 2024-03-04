@@ -1,0 +1,119 @@
+function [stdkern mukern stdbase mubase] = 2phRevCorr(tau,oriseq);
+
+global ACQinfo
+
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine;  %sec per acquired frame
+
+oridom = unique(oriseq{1});
+% if oridom(end) == 999
+%     oridom = oridom(1:end-1);
+% end
+
+%%%%%%%%%%%%%%%%%%%
+sp = tau(2)-tau(1);
+out1 = cell(length(oridom),length(tau));
+for i = 1:length(oridom)
+    for j = 1:length(tau)
+        out1{i,j} = 0;  %Initialize for accumulation
+    end
+end
+out2 = out1;
+countmat = zeros(length(oridom),length(tau));
+
+
+[y1 y2] = CondTensor(Tlim,b)
+
+for k = 1:pepgetnoconditions
+    
+    pepsetcondition(k-1)
+    Tf = 1000/pepParam('refresh');  %Frame period in ms
+    hper = pepgetparam('h_period');
+    hper = hper(1);
+    %hper = 1;
+    Tupdate = Tf*hper;
+
+    Resp1 = y1{k};
+    Resp2 = y2{k};
+    
+    respDomain = (0:length(Resp1(1,:))-1)*acqPeriod*1000;
+    
+    oriseqdum = oriseq{k}(1:hper:end);
+    
+    for ori = 1:length(oridom)
+        id = find(oriseqdum == oridom(ori));
+        stimes = (id-1)*Tupdate; %Stimulus times
+        for i = 1:length(stimes)
+            idx = find(respDomain>stimes(i) & respDomain<=stimes(i) + 500);
+            domidx = round((respDomain(idx)-stimes(i))/sp) + 1; %domain indices within time domain
+            
+            out1{ori}(:,domidx) = out1{ori}(:,domidx) + Resp1(:,idx);
+            out2{ori}(:,domidx(j)) = out2{ori}(:,domidx) + Resp2(:,idx);
+            countmat(ori,domidx(j)) = countmat(ori,domidx(j)) + 1;
+            for j = 1:length(domidx)
+                out1{ori}(:,domidx(j)) = out1{ori}(:,domidx(j)) + Resp1(:,idx(j));
+                out2{ori}(:,domidx(j)) = out2{ori}(:,domidx(j)) + Resp2(:,idx(j));
+                countmat(ori,domidx(j)) = countmat(ori,domidx(j)) + 1;
+            end
+        end
+    end
+end
+
+for i = 1:length(oridom)
+    for j = 1:length(tau)
+        out1{i,j} = out1{i,j}/countmat(i,j);  %Initialize for accumulation
+        out2{i,j} = out2{i,j}/countmat(i,j);
+    end
+end
+    
+            
+            
+            
+    for ori = 1:length(oridom)
+        for time = 1:length(tau)
+
+            oriseqdum = oriseq{k}(1:hper:end);
+            id = find(oriseqdum == oridom(ori));
+            outsamps = (id-1)*Tupdate + tau(time); %Sample times 
+            
+            outsamps = round(outsamps/sp)+1;  %Samples
+            
+            id = find(outsamps<1);
+            outsamps(id) = [];
+
+            id = find(outsamps>N);
+            outsamps(id) = [];
+
+            outdum = outSrate(outsamps);
+
+            out{ori,time} = [out{ori,time}; outdum(:)];
+        end
+    end
+    
+end
+
+for ori = 1:length(oridom)
+    if oridom(ori) ~= 999
+        for time = 1:length(tau)
+            stdkern(ori,time) = std(out{ori,time});
+            mukern(ori,time) = mean(out{ori,time});
+        end
+    else
+        for time = 1:length(tau)
+            stdbase(time) = std(out{ori,time});
+            mubase(time) = mean(out{ori,time});
+        end
+    end
+end
+
+function out = genSrate(chan,sp,N,sig);
+stimes = pepgetspikes(chan);
+dom = 0:sp:(N-1)*sp;
+out = hist(stimes,dom)*1000/sp;
+
+%%Smooth spike rates
+N = length(out);
+dom = (1:N)-N/2;
+h = exp(-((dom).^2)/(2*sig^2));
+h = h/sum(h);
+h = abs(fft(h));
+out = ifft(fft(out).*h);  %Smooth spikes

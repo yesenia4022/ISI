@@ -1,0 +1,21 @@
+function yh = LinPred(y,sp,ord,del);
+
+yh = LFPfilt4(y,0,1000/(sp),5,3);
+L = 30;
+ord = 2;
+del = 0;
+st = L+ord+del;
+yhat = yh;
+for i = st:length(yh)
+    H = zeros(L,ord);
+    for j = 1:ord
+        id = i-del-L-j+1:i-del-j;
+        pc = yh(id);
+        H(:,j) = pc(:);
+    end
+    id = i-L+1:i;
+    yout = yh(id);
+    param = inv(H'*H)*H'*yout(:);
+    yhat(i) = H(end,:)*param;
+end
+    

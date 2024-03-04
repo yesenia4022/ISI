@@ -1,0 +1,35 @@
+function CHs = GetTrialData_mat(chvec,tcr)
+
+%example: GetTrialData([1 1 0 0],[cond rep]); or GetTrialData([1 1 0 0],trial)
+
+%if tcr has one element, then it is the trial no.  if it has two
+%elements then it is the cond/repeat
+
+global twophDATADIR AUE
+
+
+if length(tcr) == 1
+    trial = tcr;
+elseif length(tcr) == 2
+    cond = tcr(1);
+    rep = tcr(2);
+    trial = gettrial(cond,rep);
+end
+
+root = 
+
+dir(twophDATADIR)
+
+filepath = [twophDATADIR AUE ' ' sprintf('%03d',trial) '.mat'];
+
+%load(filepath,'state')
+load(filepath,'acquiredData')
+
+k=1;
+for ch = 1:4
+    if chvec(ch) == 1
+        CHs{k} = single(acquiredData{ch});
+        %CHs{k} = single(state.acq.acquiredData{ch});
+        k = k+1;
+    end
+end

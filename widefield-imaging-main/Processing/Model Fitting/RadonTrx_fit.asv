@@ -1,0 +1,51 @@
+function [param ffit MSE] = RadonTrx_fit(f,oridom,pdom)
+
+global mu1d sig1d odomglob pdomglob RF
+
+odomglob = oridom;
+pdomglob = pdom;
+[Gparam dum] = Gaussfit(1:length(f(:,1)),mean(f,2)',1);
+mu1d = Gparam(1);
+sig1d = Gparam(2);
+
+%[Pref orientation; Tuning curve sig; Sinwave amp; Sinwave phase; StdDev
+%over position; Gain of funtion, baseline]
+
+f = f-min(f(:));
+f = f/sum(f(:));
+
+%orientation domain on y axis
+%position domain on x axis
+
+ma = max(f(:));
+[indy indx] = find(f == ma);
+f = circshift(f,[round(length(f(:,1))/2)-indy 0]);
+
+%%%search%%%
+RF = f;
+param = RadonTrxfitter;
+%%%%%%%%%%%
+
+[xpg thetag] = meshgrid(1:length(pdomglob),1:length(odomglob));
+
+ffitDori = exp( -(thetag-mu1d).^2/(2*sig1d.^2) );
+
+figure,imagesc(ffitDori)
+
+[xpg thetag] = meshgrid(pdomglob,odomglob);
+
+prefpos = param(1)*cos(thetag*pi/180-param(2));
+
+ffitDpos = exp( -(xpg-prefpos).^2/(2*param(3).^2) );
+
+figure,imagesc(ffitDpos)
+figure,imagesc(
+
+ffit = param(4)*ffitDpos.*ffitDori + param(5);
+
+MSE = mean((ffit(:)-f(:)).*(ffit(:)-f(:)));
+
+ffit = circshift(ffit,[indy-round(length(ffit(:,1))/2) 0]);
+
+
+

@@ -1,0 +1,87 @@
+function [param sigma ffit varacc] = CircGaussFit(f)
+
+global RF
+
+%%%%%%%%%%%
+mi = min(f);
+f = f-mi;
+E = max(f);
+f = f/E;
+%%%%%%%%%%%%
+
+RF = f;
+ 
+%% make initial guess
+
+xx = linspace(0,2*pi,dim+1);
+xx = xx(1:end-1);
+
+[dum idx] = max(f);
+
+mi = prctile(f,.1);
+ma = max(f);
+
+x0 = [xx(idx) 2 ma-mi mi];
+
+%% search
+[param,f] = fminsearch('CircGaussFit_handle',x0);
+
+%% Make a highly sampled fit to produce the sigma
+xxI = linspace(0,2*pi,101);
+xxI = xxI(1:end-1);
+
+ffitI = exp(param(2)*cos(xxI-param(1)));
+
+[dum idma] = max(ffitI);
+ffitI = circshift(ffitI,[0 1-idma]);  %shift peak to first element
+ffitI = ffitI-min(ffitI);
+ffitI = ffitI/max(ffitI);
+
+[dum id] = min(abs(ffitI-0.61));
+
+sigma = (xxI(2)-xxI(1))*(id-1);
+sigma = sigma/2*
+
+%% Make fit with same sample rate as the original
+
+ffit = exp(param(2)*cos(xx-param(1)));
+
+ffit = ffit-min(ffit);
+ffit = ffit/max(ffit);
+
+ffit = param(3)*ffit + param(4);
+
+varacc = (var(f(:))-var(f(:)-ffit(:)))/var(f(:));
+
+ffit = ffit*E + mi;
+param(3) = param(3)*E;
+param(4) = param(4)*E+mi;
+
+%%
+function err = CircGaussFit_handle(param)
+
+global RF;
+
+dim = length(RF);
+
+xc = param(1);
+kappa = param(2);
+
+A = param(3);
+base = param(4);
+
+xx = linspace(0,2*pi,dim+1);
+xx = xx(1:end-1);
+
+xx = xx-xc;
+
+img = exp(kappa*cos(xx));
+
+img = img-min(img);
+img = img/max(img);
+
+img = A*img + base;
+
+err = sum((img-RF).^2);
+
+

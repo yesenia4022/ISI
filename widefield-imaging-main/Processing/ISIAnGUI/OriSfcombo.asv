@@ -1,0 +1,441 @@
+function OriSfcombo
+
+global bw f0m f0m_var funcmap bcond ACQinfo maskS TCWin symbolInfo Analyzer G_handles
+
+[xmicperpix ymicperpix] = getImResolution;
+xmicperpix = xmicperpix*40/16;
+ymicperpix = ymicperpix*40/16;
+
+set(G_handles.HPflag,'Value',0);
+set(G_handles.LPflag,'Value',1);
+
+set(G_handles.Lwidth,'string','7');
+hh = makeMapFilter;
+
+anatomyflag = 0;
+bwCellPlot = ones(size(funcmap));
+
+
+%% get orimap
+for i = 1:length(Analyzer.loops.conds{1}.symbol)
+    if strcmp(Analyzer.loops.conds{1}.symbol{i},'ori');
+        idsym = i;
+        break
+    end
+end
+
+symbolInfo.ID(1) = idsym;
+set(G_handles.primSymbol,'value',1); 
+set(G_handles.secSymbol,'value',2); 
+
+setsymbolstruct
+
+funcmap = GprocessAxis(f0m,hh);  %output is a vector image
+
+oriang = angle(funcmap);
+orimag = abs(funcmap);
+oriang = (oriang+pi*(1-sign(oriang)))/2*180/pi;  %Put domain as [0 180].
+
+
+funcmap = GprocessAxis(f0m,[]);  %output is a vector image
+
+oriang_raw = angle(funcmap);
+orimag_raw = abs(funcmap);
+oriang_raw = (oriang_raw+pi*(1-sign(oriang_raw)))/2*180/pi;  %Put domain as [0 180].
+
+
+%% get sfmap
+
+for i = 1:length(Analyzer.loops.conds{1}.symbol)
+    if strcmp(Analyzer.loops.conds{1}.symbol{i},'s_freq');
+        idsym = i;
+        break
+    end
+end
+
+symbolInfo.ID(1) = idsym;
+set(G_handles.primSymbol,'value',2); 
+set(G_handles.secSymbol,'value',1); 
+
+setsymbolstruct
+
+funcmap = GprocessLog(f0m,bwCellPlot,hh);   %output is complex
+sfmag = real(funcmap);
+sfpref = imag(funcmap);
+
+funcmap = GprocessLog(f0m,bwCellPlot,[]);   %output is complex
+sfmag_raw = real(funcmap);
+sfpref_raw = imag(funcmap);
+
+%% Get mask for data selection
+
+dim = size(f0m{1});
+Tens = zeros(dim(1),dim(2),length(f0m),'single'); %preallocate
+Tens_var = Tens;
+for k = 1:length(f0m)
+    Tens(:,:,k) = ifft2(fft2(f0m{k}).*abs(fft2(hh)));
+    Tens_var(:,:,k) = ifft2(fft2(f0m_var{k}).*abs(fft2(hh)));
+    
+%     Tens(:,:,k) = f0m{k};
+%     Tens_var(:,:,k) = f0m_var{k};
+end
+
+[pk_dF idpk] = max(Tens(:,:,1:end-1),[],3);
+pkSE_dF = zeros(size(idpk));
+for i = 1:size(Tens_var,1)
+    for j = 1:size(Tens_var,2)
+        pkSE_dF(i,j) = sqrt(Tens_var(i,j,idpk(i,j)))/sqrt(getnorepeats(1));  %standard error of best response at each pixel
+    end
+end
+
+base_dF = Tens(:,:,end);
+baseSE_dF = sqrt(Tens_var(:,:,end))/sqrt(getnorepeats(getnoconditions));
+
+dprime = (pk_dF-base_dF)./(pkSE_dF+baseSE_dF);
+
+
+%% plot
+
+%Resample images to have equal resolution on both axes
+xdom = (0:ACQinfo.pixelsPerLine-1)*xmicperpix;
+ydom = (0:ACQinfo.linesPerFrame-1)*ymicperpix;
+
+dim = size(oriang);
+logdom = logspace(log10(.5),log10(8),30);
+oridom = 0:5:175;
+
+dpthresh = .5;
+dprimemask = zeros(size(dprime));
+dprimemask(find(dprime>dpthresh)) = 1;
+
+if isempty(bw)
+    bw = ones(size(dprimemask));
+end
+
+figure
+bwmask = (orimag_raw.^.5).*dprimemask.*bw;
+plotaxismap(bwmask,oriang_raw,0,xdom,ydom,1-bwmask)
+hold on
+contour(xdom,ydom,sfpref,logdom,'w')
+hold on
+[idy idx] = find(sign(bwmask) == 0);  %cover up outside the ROI
+plot(idx*xmicperpix,idy*ymicperpix,'.w','MarkerSize',15)  
+hold off
+title('Ori map w/ Sfreq contour')
+axis off
+ 
+
+bwmask = (sfmag_raw-min(sfmag_raw(:))).^.7.*dprimemask.*bw;
+figure
+plotlogmap(bwmask,sfpref_raw,0,xdom,ydom,1-bwmask)
+hold on
+contour(xdom,ydom,oriang,oridom,'k')
+hold on
+[idy idx] = find(sign(bwmask) == 0);  %cover up outside the ROI
+plot(idx*xmicperpix,idy*ymicperpix,'.w','MarkerSize',15)  
+hold off
+title('Sfreq map w/ Ori contour')
+%Make colorbar
+sfbardom = [.5 1 2 4 8];
+clear domcell
+for i = 1:length(sfbardom)
+    domcell{i} = sfbardom(i);
+end
+iddom = linspace(1,max(oridom(:)),length(sfbardom));
+colorbar('YTick',iddom,'YTickLabel',domcell)
+axis off
+
+%plot both contours together
+figure
+contour(xdom,ydom,oriang,oridom,'k')
+hold on
+contour(xdom,ydom,sfpref,logdom,'r')
+axis ij
+hold on
+[idy idx] = find(sign(bwmask) == 0);  %cover up outside the ROI
+plot(idx*xmicperpix,idy*ymicperpix,'.w','MarkerSize',15)  
+axis image
+title('Sfreq contour & Ori contour')
+set(gca,'Xtick',[],'Ytick',[])
+
+hold on,  line([20 20],[0 100])
+
+
+%%
+logdom = [.5 1 2 4 8]
+clear domcell
+for i = 1:length(logdom)
+    domcell{i} = logdom(i);
+end
+iddom = linspace(1,64,length(logdom));
+colorbar('YTick',iddom,'YTickLabel',domcell)
+%%
+dim = size(oriang);
+%dorix = oriang(:,3:end) - oriang(:,1:end-2);
+%doriy = oriang(3:end,:) - oriang(1:end-2,:);
+
+dorix = oridiff(oriang(:,3:end)*pi/180,oriang(:,1:end-2)*pi/180);
+doriy = oridiff(oriang(3:end,:)*pi/180,oriang(1:end-2,:)*pi/180);
+
+dorix = [zeros(dim(1),1) dorix zeros(dim(1),1)];
+doriy = [zeros(1,dim(2)); doriy; zeros(1,dim(2))];
+
+magorigrad = sqrt(dorix.^2 + doriy.^2);
+angorigrad = atan(doriy./dorix);
+id = find(angorigrad<0);
+angorigrad(id) = angorigrad(id) + pi;
+angorigrad = angle(exp(1i*angorigrad)); %make it an axis
+
+
+dsfx = log2(sfpref(:,3:end)./sfpref(:,1:end-2));
+dsfy = log2(sfpref(3:end,:)./sfpref(1:end-2,:));
+
+dsfx = [zeros(dim(1),1) dsfx zeros(dim(1),1)];
+dsfy = [zeros(1,dim(2)); dsfy; zeros(1,dim(2))];
+
+magsfgrad = sqrt(dsfx.^2 + dsfy.^2);
+angsfgrad = atan(dsfy./dsfx);
+id = find(angsfgrad<0);
+angsfgrad(id) = angsfgrad(id) + pi;
+angsfgrad = angle(exp(1i*angsfgrad)); %make it an axis
+
+%id = find(orimag>prctile(orimag(:),60));
+%id = find(sfmag>prctile(sfmag(:),20));
+id = find(dprime>dpthresh & bw==1);
+
+dax = oridiff(angorigrad,angsfgrad);
+figure,hist(abs(dax(id))*180/pi)
+
+%figure,scatter(magsfgrad(id),magorigrad(id),'.')
+[r p] = corrcoef(magsfgrad(id),magorigrad(id))
+
+
+
+function plotaxismap(mag,ang,anatflag,xdom,ydom,varargin)
+
+global fh
+%mag = log(mag)
+
+%This is because of the funny stuff with bidirectional scanning
+%mag = mag(3:end-2,3:end-2); ang = ang(3:end-2,3:end-2); 
+
+if ~isempty(varargin)
+    transparentMask = varargin{1};
+    %transparentMask = transparentMask(3:end-2,3:end-2);
+    transparentID = find(transparentMask == 1);
+end
+
+
+mag = mag-min(mag(:));
+mag = mag/max(mag(:));
+
+dim = size(ang);
+set(gcf,'Color',[1 1 1]);
+
+if anatflag
+    
+    CH = GetTrialData([1 0 0 0],1);
+%     if get(G_handles.fastMotionFlag,'Value')
+%         [Px_fast Py_fast] = getTrialMotion3(CH{1});
+%         CH{1} = makeGeoTrx(CH{1},Px_fast,Py_fast);
+%     end
+    imanat = mean(CH{1}(:,:,2:end-1),3);
+    
+    imanat = imanat(3:end-2,3:end-2);
+    
+    mi = prctile(imanat(:),0);    
+    imanat = phi(imanat-mi);
+    ma = prctile(imanat(:),100);
+    imanat = imanat/ma;
+    
+    %%%
+    mag = sqrt(imanat.*mag);
+    %%%
+    
+    imfunc = ang;
+    imfunc = imfunc/180;
+    imfunc = round(imfunc*63+1);
+    %imanat = round(imanat*63+1);
+
+    hsvid = hsv;
+    imout = zeros(dim(1),dim(2),3);
+    for i = 1:dim(1)
+        for j = 1:dim(2)            
+            imout(i,j,:) = mag(i,j)*hsvid(imfunc(i,j),:);
+        end
+    end
+    
+    imanat(:,:,2) = imanat;
+    imanat(:,:,3) = imanat(:,:,1);
+    
+    %imout = 3*imout.^3+.3*(imanat).^.3;
+    
+    imout = imout + imanat;
+
+    imout = imout/max(imout(:));
+    
+    %imout = imout(1:end-4,8:end,:);
+    
+    x = image(xdom,ydom,imout,'CDataMapping','direct','AlphaDataMapping','none');
+
+else
+%     imout = ang;
+%     imout = imout/180;
+%     imout = round(imout*63+1);
+%     x = image(1:length(ang(1,:)),1:length(ang(:,1)),imout,'CDataMapping','direct','AlphaData',mag,'AlphaDataMapping','none');
+    
+    imfunc = ang;
+    imfunc = imfunc/180;
+    imfunc = round(imfunc*63+1);
+    %imanat = round(imanat*63+1);
+
+    hsvid = hsv;
+    imout = zeros(dim(1),dim(2),3);
+    for i = 1:dim(1)
+        for j = 1:dim(2)            
+            imout(i,j,:) = mag(i,j)*hsvid(imfunc(i,j),:);
+        end
+    end
+    
+    if ~isempty(varargin)
+        for i = 1:3
+           imdum = imout(:,:,i);
+           imdum(transparentID) = max(imout(:))*ones(size(transparentID)); 
+           imout(:,:,i) = imdum;
+        end
+    end
+    
+
+    imout = imout/max(imout(:));
+    
+    %imout = imout(1:end-4,8:end,:);
+    
+    x = image(xdom,ydom,imout,'CDataMapping','direct');
+    
+end
+
+axis image;
+
+fh = gcf;
+
+colormap hsv
+%colorbar('YTick',[1 16:16:64],'YTickLabel',{'0','45','90','135','180'})
+
+%Create the orientation legend%%%%%%%%%%%%%%%%%%
+% legdom = 0:30:180;
+% hsvdom = hsv;
+% id = round(linspace(1,64,length(legdom)));
+% hsvdom = hsvdom(id,:);
+% R = 20;
+% rid = linspace(1,ydom(end),length(legdom));
+% cid = xdom(end)+ 25;
+% xpts_o = [0 0];
+% ypts_o = [1-R 1+R];
+% 
+% for i = 1:length(legdom)
+%    
+%     xpts = xpts_o*cos(legdom(i)*pi/180) + ypts_o*sin(legdom(i)*pi/180);
+%     ypts = xpts_o*sin(legdom(i)*pi/180) - ypts_o*cos(legdom(i)*pi/180);
+%     ypts = ypts + rid(i);
+%     xpts = xpts + cid;
+%     hold on
+%     line(xpts,ypts,'Color',hsvdom(i,:),'Clipping','off','LineWidth',3);
+%     
+% end
+% hold off
+
+
+%%
+function plotlogmap(mag,pref,anatflag,xdom,ydom,varargin)
+
+global fh symbolInfo
+
+
+if ~isempty(varargin)
+    transparentMask = varargin{1};
+    transparentID = find(transparentMask == 1);
+end
+
+logdom = getdomain(symbolInfo.str{1});
+
+mag = mag-min(mag(:));
+mag = mag/max(mag(:));
+
+pref = log2(pref);
+dim = size(mag);
+set(gcf,'Color',[1 1 1]);
+
+if anatflag
+    
+    [imanat] = getExptMean([1 0 0 0],2);
+    imanat = imanat{1};
+    
+    mi = prctile(imanat(:),1);    
+    imanat = phi(imanat-mi);
+    ma = prctile(imanat(:),99);
+    imanat = imanat/ma;
+
+    imfunc = pref;
+    imfunc = imfunc-min(imfunc(:));
+    imfunc = imfunc/max(imfunc(:));
+    imfunc = round(imfunc*63+1);
+
+    jetid = jet;
+    imout = zeros(dim(1),dim(2),3);
+    for i = 1:dim(1)
+        for j = 1:dim(2)
+            imout(i,j,:) = mag(i,j)*jetid(imfunc(i,j),:);
+        end
+    end
+    
+    imanat(:,:,2) = imanat;
+    imanat(:,:,3) = imanat(:,:,1);
+    
+    imout = imout+sqrt(imanat);
+
+    imout = imout/max(imout(:));
+    
+    x = image(xdom,ydom,imout,'CDataMapping','direct','AlphaDataMapping','none');
+
+else      
+
+    imfunc = pref;
+    imfunc = imfunc-min(imfunc(:));
+    imfunc = imfunc/max(imfunc(:));
+    imfunc = round(imfunc*63+1);
+
+    jetid = jet;
+    imout = zeros(dim(1),dim(2),3);
+    for i = 1:dim(1)
+        for j = 1:dim(2)
+            imout(i,j,:) = mag(i,j)*jetid(imfunc(i,j),:);
+        end
+    end    
+
+    if ~isempty(varargin)
+        for i = 1:3
+            imdum = imout(:,:,i);
+            imdum(transparentID) = max(imout(:))*ones(size(transparentID));
+            imout(:,:,i) = imdum;
+        end
+    end
+    
+    
+    imout = imout/max(imout(:));
+    
+    image(xdom,ydom,imout,'CDataMapping','direct'); 
+    
+    
+%     %imagesc(pref,'AlphaData',mag)
+%  
+%     imfunc = pref;
+%     imfunc = imfunc-log10(logdom(1));
+%     imfunc = imfunc/(log10(logdom(end))-log10(logdom(1)));
+%     imfunc = round(imfunc*63+1);  %domain max at 64
+%     
+%     image(1:length(pref(1,:)),1:length(pref(:,1)),imfunc,'CDataMapping','direct','AlphaData',mag,'AlphaDataMapping','none');
+%     
+end
+axis image
+
+

@@ -1,0 +1,26 @@
+function [param ffit domu varaccount] = Saturationfit2(domain,f,G0)
+
+%2 has a baseline parameter.  It also minimizes the error on the y-axis.
+
+global yy xx
+
+
+%%%search%%%
+xx = domain;
+yy = f;
+param = saturationfitter2(G0);
+%%%%%%%%%%%
+
+domu = unique(xx);
+
+ffit = param(1)*(1 - exp(-domu*param(2))) + param(3);
+
+
+%%%%
+id = find(isnan(yy.*xx));
+yy(id) = [];
+xx(id) = [];
+expect = param(1)*(1 - exp(-xx*param(2))) + param(3);
+varaccount = (var(yy)-var(yy-expect))/var(yy);
+%%%%
+

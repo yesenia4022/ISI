@@ -1,0 +1,225 @@
+function plotRCmaps
+
+%Ian Nauhaus
+
+global TC DM MK ACQinfo maskS idExamp
+
+global posprincax oriprincax
+
+[xmicperpix ymicperpix] = getImResolution;
+
+%Now plot color image of tuning
+orimagIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+oriprefIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+posmagIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+xposIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+yposIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+
+xposIm_hat = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+yposIm_hat = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+oriprefIm_hat = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+
+%Resample images to have equal resolution on both axes
+xdom = (0:ACQinfo.pixelsPerLine-1)*xmicperpix;
+ydom = (0:ACQinfo.linesPerFrame-1)*ymicperpix;
+
+posrange = [0 .3];
+xdomDum = 0:.05:.3
+xysize = [.33*xdom(end)/200 .34*ydom(end)/250];  %Size of the panels, normalized by the ROI size
+
+for c = 1:length(DM.colordom)
+    c
+    H = [MK.CoM ones(length(MK.CoM(:,1)),1)];
+    
+    id = find(~isnan((TC.xpos{c})) & ~isinf((TC.xpos{c})));
+    posplane = inv(H(id,:)'*H(id,:))*H(id,:)'*(TC.xpos{c}(id))';
+    xpos_hat = H*posplane;    
+    
+    id = find(~isnan((TC.ypos{c})) & ~isinf((TC.ypos{c})));
+    posplane = inv(H(id,:)'*H(id,:))*H(id,:)'*(TC.ypos{c}(id))';
+    ypos_hat = H*posplane;   
+
+    %id = find(~isnan(TC.OAng{c}));
+    %H = H(id,:); opref = TC.OAng{c}(id);  
+    [oriplane oripref_hat] = Planefit(H(:,2),H(:,1),TC.OAng{c});
+    
+    ori_ang = atan(oriplane(2)/oriplane(1))*180/pi;
+    pos_ang = atan(posplane(1)/posplane(2))*180/pi;
+    maporidiff = abs(oridiff(ori_ang*pi/180,pos_ang*pi/180)*180/pi);
+    
+    mapmag = TC.OMag{c};
+    mapmag = mapmag-min(mapmag);
+    mapmag = mapmag/max(mapmag);
+    for p = 1:MK.Ncell
+
+        idcell = find(MK.masklabel(:) == MK.celldom(MK.nID(p)));
+
+        orimagIm(idcell) = mapmag(p);
+        oriprefIm(idcell) = TC.OAng{c}(p);
+        
+        oriprefIm_hat(idcell) = oripref_hat(p);
+        
+        
+        if isnan(oriprefIm(idcell))
+            oriprefIm(idcell) = 0;
+        end
+
+        posmagIm(idcell) = 1;
+        
+        xposIm(idcell) = TC.xpos{c}(p);        
+        xposIm_hat(idcell) = xpos_hat(p);
+        
+        yposIm(idcell) = TC.ypos{c}(p);        
+        yposIm_hat(idcell) = ypos_hat(p);
+
+    end
+
+    orimagIm = log10(orimagIm+.01);
+    orimagIm = orimagIm-min(orimagIm(:));
+    orimagIm = orimagIm/max(orimagIm(:));
+    
+    %%%Orientation
+    figure, subplot(3,2,1)
+    IMtens = getImTens(oriprefIm,sign(orimagIm),[0 180],'hsv',1);
+    image(xdom,ydom,IMtens)
+    title(['color ' num2str(c)]),  axis image
+    makeOriLegend(IMtens,xdom,ydom)
+    plotEXcirc(idExamp,xdom,ydom)
+    hold on
+    hyp = 10; orig = -5;
+    plot([orig hyp*cos(oriprincax*pi/180)+orig],[orig hyp*sin(oriprincax*pi/180)+orig],'k','Clipping','off')
+    %set(gca,'Position',[.13 .58 xysize])
+    
+    subplot(3,2,2)
+    IMtens = getImTens(oriprefIm_hat,sign(orimagIm),[0 180],'hsv',1);
+    image(xdom,ydom,IMtens)    
+    axis image
+    plotEXcirc(idExamp,xdom,ydom)    
+    %set(gca,'Position',[.53 .58 xysize])
+    
+    %%%Retinotopy X
+    subplot(3,2,3)
+    IMtens = getImTens((xposIm),sign(posmagIm),posrange,'jet',1);
+    image(xdom,ydom,IMtens), colorbar
+    for i = 1:length(xdom)
+        domcell{i} = round(xdom(i)*100)/100;
+    end    
+
+    posvec = round((xdom)*100)/100;
+    posvec(end) = floor((xdom(end))*100)/100;
+    posvec(1) = ceil((xdom(1))*100)/100;
+    posvec = (posvec - (posrange(1)))/((posrange(2))-(posrange(1)));
+    posvec = round(posvec*63+1);    
+    colorbar('YTick',posvec,'YTickLabel',domcell)
+    title(['color ' num2str(c)]), axis image
+    plotEXcirc(idExamp,xdom,ydom)
+    hold on
+    hyp = 10; orig = -5;
+    plot([orig hyp*cos(posprincax*pi/180)+orig],[orig hyp*sin(posprincax*pi/180)+orig],'k','Clipping','off')
+    %set(gca,'Position',[.13 .1 xysize])
+    
+    subplot(3,2,4)
+    IMtens = getImTens((xposIm_hat),sign(posmagIm),posrange,'jet',1);
+    image(xdom,ydom,IMtens)
+    %colorbar('YTick',posvec,'YTickLabel',domcell)
+    axis image
+    plotEXcirc(idExamp,xdom,ydom)    
+    
+    %set(gca,'Position',[.53 .1 xysize])
+    
+    
+    %%%Retinotopy Y
+    subplot(3,2,5)
+    IMtens = getImTens(yposIm,sign(posmagIm),posrange,'jet',1);
+    image(xdom,ydom,IMtens), colorbar
+ 
+    colorbar('YTick',posvec,'YTickLabel',domcell)
+    title(['color ' num2str(c)]), axis image
+    plotEXcirc(idExamp,xdom,ydom)
+    hold on
+    hyp = 10; orig = -5;
+    plot([orig hyp*cos(posprincax*pi/180)+orig],[orig hyp*sin(posprincax*pi/180)+orig],'k','Clipping','off')
+    %set(gca,'Position',[.13 .1 xysize])
+    
+    subplot(3,2,6)
+    IMtens = getImTens((yposIm_hat),sign(posmagIm),posrange,'jet',1);
+    image(xdom,ydom,IMtens)
+    %colorbar('YTick',posvec,'YTickLabel',domcell)
+    axis image
+    plotEXcirc(idExamp,xdom,ydom)    
+    
+    %set(gca,'Position',[.53 .1 xysize])
+
+end
+
+function dist = oridiff(angle1,angle2)
+
+w1 = exp(1i*2*angle1);
+w2 = exp(1i*2*angle2);
+dist = angle(w1 ./ w2)/2;
+
+function plotEXcirc(idExamp,xdom,ydom)
+
+global MK
+
+if ~isempty(idExamp)
+    for q = 1:length(idExamp)
+        hold on
+        plot(xdom(round(MK.CoM(idExamp(q),2))),ydom(round(MK.CoM(idExamp(q),1))),'ok','MarkerSize',10)
+    end
+end
+
+function IMtens = getImTens(pref,mag,mima,maptype,BackG)
+
+id = find(mag>1);
+mag(id) = 1;
+
+id = find(pref<mima(1));
+pref(id) = mima(1);
+id = find(pref>mima(2));
+pref(id) = mima(2);
+
+
+prefid = (pref-mima(1))/(mima(2)-mima(1));
+prefid = round(prefid*63+1);  %normalize to be colormap index
+
+dim = size(pref);
+mapvals = eval(maptype);
+IMtens = zeros(dim(1),dim(2),3);
+for i = 1:dim(1)
+    for j = 1:dim(2)
+        if mag(i,j) == 0 | isnan(mag(i,j)) | isnan(prefid(i,j));
+            IMtens(i,j,:) = [BackG BackG BackG];
+        else
+            IMtens(i,j,:) = mag(i,j)*mapvals(prefid(i,j),:);
+        end
+    end
+end
+
+
+function makeOriLegend(imTens,xdom,ydom)
+%%
+hold on
+
+%Create the orientation legend%%%%%%%%%%%%%%%%%%
+legdom = 0:30:180;
+hsvdom = hsv;
+id = round(linspace(1,64,length(legdom)));
+hsvdom = hsvdom(id,:);
+R = 7;
+rid = linspace(ydom(1),ydom(end),length(legdom));
+cid = xdom(end) + 10;
+xpts_o = [0 0];
+ypts_o = [1-R 1+R];
+
+for i = 1:length(legdom)
+   
+    xpts = xpts_o*cos(legdom(i)*pi/180) + ypts_o*sin(legdom(i)*pi/180);
+    ypts = xpts_o*sin(legdom(i)*pi/180) - ypts_o*cos(legdom(i)*pi/180);
+    ypts = ypts + rid(i);
+    xpts = xpts + cid;
+    hold on
+    line(xpts,ypts,'Color',hsvdom(i,:),'Clipping','off','LineWidth',3);
+    
+end
+hold off

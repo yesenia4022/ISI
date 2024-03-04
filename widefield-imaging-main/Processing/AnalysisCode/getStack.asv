@@ -1,0 +1,65 @@
+function CHs = getStack(filepath,chvec)
+
+tf = imformats('tif');
+info = feval(tf.info, filepath);
+infoH = info(1).ImageDescription;
+imgHeader = parseHeaderNew(infoH);
+ACQinfo = imgHeader.acq;
+
+Nimages = length(info);
+
+acqId = [ACQinfo.acquiringChannel1 ACQinfo.acquiringChannel2 ACQinfo.acquiringChannel3 ACQinfo.acquiringChannel4]; 
+
+numberOfZSlices
+
+dFrame = ACQinfo.numberOfChannelsAcquire;
+
+dim = [ACQinfo.linesPerFrame ACQinfo.pixelsPerLine];
+
+if chvec(1)
+    
+    k = 1;
+    dim2 = [dim length(1:dFrame:Nimages)];
+    CHs{1} = zeros(dim2,'single');
+    for frame=1:dFrame:Nimages
+        A = feval(tf.read, filepath, frame);
+        CHs{1}(:,:,k) = single(A);
+        k = k+1;
+    end
+end
+
+if chvec(2)
+    fstart = 1+acqId(1);
+    k = 1;
+    dim2 = [dim length(fstart:dFrame:Nimages)];
+    CHs{2} = zeros(dim2,'single');
+    for frame=fstart:dFrame:Nimages
+        A = feval(tf.read, filepath, frame);
+        CHs{2}(:,:,k) = single(A);
+        k = k+1;
+    end
+end
+
+if chvec(3)
+    fstart = 1+1+sum(acqId(1:2));
+    k = 1;
+    dim2 = [dim length(fstart:dFrame:Nimages)];
+    CHs{3} = zeros(dim2,'single');
+    for frame=fstart:dFrame:Nimages
+        A = feval(tf.read, filepath, frame);
+        CHs{3}(:,:,k) = single(A);
+        k = k+1;
+    end
+end
+
+if chvec(4)
+    fstart = 1+sum(acqId(1:3));
+    k = 1;
+    dim2 = [dim length(fstart:dFrame:Nimages)];
+    CHs{4} = zeros(dim2,'single');
+    for frame=fstart:dFrame:Nimages
+        A = feval(tf.read, filepath, frame);
+        CHs{4}(:,:,k) = single(A);
+        k = k+1;
+    end
+end

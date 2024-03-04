@@ -1,0 +1,140 @@
+function [tcPop CoM pardom] = GetCellKernels(f0dum,cellmask)
+
+
+global pepANA popState bsflag
+%Each element of the cell array 'f0dum' is the average image for the
+%corresponding condition
+
+for i = 1:2
+    pepsetcondition(i)
+    if ~pepblank        
+        Np = length(pepANA.listOfResults{i}.values);  %get number of looping parameters
+        for z = 1:Np
+            if strcmp(pepANA.listOfResults{i+1}.symbols(z),popState.funcSymbol)
+                paramID = z;  %The parameter to analyze directly
+            end
+        end
+    end
+end
+
+for i = 1:length(f0dum)
+    pepsetcondition(i-1)
+    
+    if ~pepblank      
+        for z = 1:Np  %loop through each loop parameter
+            paramlist{z}(i) = pepANA.listOfResults{i}.values{z};
+        end     
+    else
+        for z = 1:Np
+            paramlist{z}(i) = NaN;
+        end
+    end
+    
+end
+
+for z = 1:Np
+    
+    paramlist{z} = round(paramlist{z}*100)/100;
+    
+    pardom{z} = unique(paramlist{z});
+    id = find(isnan(pardom{z}));
+    pardom{z}(id) = [];
+    
+end
+
+
+cmdum = cellmask;  %Cell mask within this ROI
+masklabel = bwlabel(cmdum);
+celldom = unique(masklabel);
+celldom = celldom(2:end); %first element is the neuropil
+Ncell = length(celldom);
+
+CoM = zeros(Ncell,2);
+for p = 1:Ncell
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    CoM(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+    
+    idcell{p} = find(masklabel(:) == celldom(p));
+end
+
+for i = 1:length(f0dum)
+    pepsetcondition(i-1)
+   
+    if ~pepblank
+
+        for z = 1:Np
+            kernloc(z) = find(pardom{z} == paramlist{z}(i));  %location in kernel
+        end
+        
+        %Get kernel value for each cell
+        for p = 1:Ncell
+
+            R = mean(f0dum{i}(idcell{p}));
+            
+            switch Np
+                
+                case 1
+                    kernPop(kernloc(1),p) = R;                
+                case 2                    
+                    kernPop(kernloc(1),kernloc(2),p) = R;
+
+            end
+
+        end
+        
+        
+    else
+        for p = 1:Ncell
+                  
+            popBlank(p) = mean(f0dum{i}(idcell{p}));
+
+        end
+    end
+end
+
+
+
+switch Np
+    
+    case 1
+        
+        tcPop = kernPop;
+
+    case 2
+
+        tcpopdum = squeeze(mean(kernPop,paramID));
+        [dum idma] = max(tcpopdum);
+        if paramID == 1
+            for p = 1:Ncell
+                tcPop(:,p) = squeeze(kernPop(:,idma(p),p));
+            end
+        else
+            for p = 1:Ncell
+                tcPop(:,p) = squeeze(kernPop(idma(p),:,p));
+            end
+        end
+
+      
+%     case 3
+%         max(kernPop,[],);
+
+
+end
+
+
+%If functionality is orientation, then combine across opposite directions:
+if strcmp(popState.funcSymbol,'ori')
+    
+    tcPopdum = (tcPop(1:end/2,:)+tcPop(end/2+1:end,:))/2;
+    tcPop = tcPopdum;
+    _f
+    pardom{paramID} = pardom{paramID}(1:end/2);
+
+end
+
+
+if ~bsflag
+    blankmat = (popBlank'*ones(1,length(tcPop(:,1))))';
+    tcPop = (tcPop-blankmat)./blankmat;  %deltaF/F
+end
+

@@ -1,0 +1,21 @@
+function [ro] = intersectfitter
+
+global RF
+
+x0 = gaussfitguess;
+dim = length(RF);
+
+% options = optimset('MaxFunEvals',6000,'MaxIter',6000,'TolFun',.00004,'TolX',.00004);
+% [x,f] = fminsearch('gaussfitter_handle',x0,options);
+[ro] = fminsearch('gaussfitter_handle',ro);
+
+xc = x(1);
+sig = x(2);
+
+A = x(3);
+B = x(4);
+
+xx = 1:dim;
+
+d = (xx-xc).^2;
+g = A*exp(-d/(2*sig^2))+B;

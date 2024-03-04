@@ -1,0 +1,147 @@
+function [Pxhat Pyhat] = getTTLmovie(CH,TTL)
+
+global ACQinfo
+% 
+% tf = imformats('tif');
+% info = feval(tf.info, filepath);
+% infoH = info(1).ImageDescription;
+% imgHeader = parseHeaderNew(infoH);
+% ACQinfo = imgHeader.acq;
+
+Idim = [ACQinfo.linesPerFrame ACQinfo.pixelsPerLine];
+Fperiod = ACQinfo.msPerLine*ACQinfo.linesPerFrame; %frame period in ms
+
+
+%Light smoothing of the data across time
+% tkern = [0 1 0];
+% tkern = tkern/sum(tkern);
+% kern = zeros(Idim(1),Idim(2),length(tkern));
+% for i = 1:length(tkern)
+%     kern(:,:,i) = ones(Idim(1),Idim(2))*tkern(i);
+% end
+% 
+% smoother = zeros(size(CH{1}));
+% smoother(:,:,1:length(tkern)) = kern;
+% 
+% smoother = abs(fft(smoother,[],3));
+% for c = 1:2  %for the two data channels
+%     CHsfilt{c} = ifft(fft(CH{c},[],3).*smoother,[],3);
+% end
+% 
+% 
+% %Smooth data in space
+% skern = hann(5)';
+% skern = skern'*skern;
+% skern = skern/sum(skern(:));
+% smoother = zeros(Idim(1),Idim(2));
+% smoother(1:length(skern(:,1)),1:length(skern(1,:))) = skern;
+% smoother = abs(fft2(smoother));
+% for c = 1:2  %for the two data channels
+%     for i = 1:length(CHsfilt{c}(1,1,:))
+%         CHsfilt{c}(:,:,i) = ifft2(fft2(CHsfilt{c}(:,:,i)).*smoother);
+%     end
+% end
+
+CHsfilt = CH;
+
+chan = 2;
+%Get spatio-temporal gradient 
+fstart = 2;
+[dFdx dFdy dFdt] = gradient(CHsfilt{chan}(:,:,fstart:end-1)); %change per pixel, and change per frame
+% dFdx = diff(CHsfilt{chan}(:,:,1:end-1),[],2);
+% dFdy = diff(CHsfilt{chan}(:,:,1:end-1),[],1);
+
+lperbin = 17; %lines per section
+Nbins = ceil(Idim(1)/lperbin);
+
+for i = 1:Nbins
+    
+    yran = ((i-1)*lperbin+1):lperbin*i;    
+    tensX = dFdx(yran,:,:);
+    tensY = dFdy(yran,:,:);
+    tensT = dFdt(yran,:,:);
+    
+    for tau = 1:length(tensT(1,1,:))
+        xdum = tensX(:,:,tau);
+        ydum = tensY(:,:,tau);
+        tdum = tensT(:,:,tau);
+        H = [xdum(:) ydum(:)];
+        Vxy = inv(H'*H)*H'*tdum(:);     
+        Vx(i,tau) = Vxy(1);
+        Vy(i,tau) = Vxy(2);
+    end
+    
+end
+
+%Interleave the bins to create the continuous sequence
+Vx_all = zeros(1,numel(Vx));
+Vy_all = zeros(1,numel(Vy));
+for i = 1:length(Vx(:,1))
+    
+    Vx_all(i:Nbins:end) = Vx(i,:);
+    Vy_all(i:Nbins:end) = Vy(i,:);
+    
+end
+
+Px = cumsum(Vx_all);
+Py = cumsum(Vy_all);
+
+sp = lperbin*ACQinfo.msPerLine/1000;
+tdom = (0:length(Px)-1)*sp;
+
+%fit a sine wave
+fdom = linspace(0,1/sp,length(Px)+1);
+fdom = fdom(1:end-1);
+Px = Px-median(Px); Py = Py-median(Py);
+Hx = fft(Px); Hy = fft(Py);
+figure,stem(fdom,abs(Hy),'.')
+if max(Hx) > max(Hy)
+    H = Hx;
+else
+    H = Hy;
+end
+id1 = find(H == max(H(1:length(H)/2)));
+id2 = find(H == max(H(length(H)/2:end)));
+fo = fdom(id1);
+
+% Perform a more fine search of the right frequency than the sampling of the
+% Fourier basis.  i.e. when the "best" freq does not have an integer number
+% of periods within the trial, it will mess things up.
+fp = fdom(2)-fdom(1);
+fsearch = linspace(fo-fp/2,fo+fp/2,20);
+for i = 1:length(fsearch)
+    harmR = cos(2*pi*fsearch(i)*tdom);
+    harmI = -sin(2*pi*fsearch(i)*tdom);
+    
+    harmR = harmR/sum(harmR.^2);
+    harmI = harmI/sum(harmI.^2);
+    harm = 1i*harmI + harmR;
+    
+    Hxlocal(i) = sum(harm.*Px);
+    Hylocal(i) = sum(harm.*Py);
+end
+
+[dum id] = max(abs(Hylocal));
+
+sphat = ACQinfo.msPerLine/1000;
+tdomhat = (0:Idim(1)*length(CH{1}(1,1,:))-1)*sphat;
+tdomhat = tdomhat - (Idim(1)*sphat)*(fstart-1);
+Pxhat = abs(Hxlocal(id))*cos(2*pi*fsearch(id)*tdomhat + angle(Hxlocal(id)));
+Pyhat = abs(Hylocal(id))*cos(2*pi*fsearch(id)*tdomhat + angle(Hylocal(id)));
+
+% Hxfilt = zeros(1,length(H));
+% Hxfilt([id1 id2]) = Hx([id1 id2]);
+% Pxhat = ifft(Hxfilt);
+% Hyfilt = zeros(1,length(H));
+% Hyfilt([id1 id2]) = Hy([id1 id2]);
+% Pyhat = ifft(Hyfilt);
+
+figure,plot(tdom,[Px' Py'])
+hold on
+plot(tdomhat,[Pxhat' Pyhat'])
+xlabel('seconds'),ylabel('pixels')
+legend('x position','y position')
+
+
+
+figure,plot()

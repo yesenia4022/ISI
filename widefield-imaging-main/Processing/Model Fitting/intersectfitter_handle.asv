@@ -1,0 +1,32 @@
+function err = intersectfitter_handle(param)
+
+global S D;
+
+dim = length(RF);
+
+xc = param(1);
+sx = param(2);
+
+A = param(3);
+base = param(4);
+
+xx = 1:dim;
+
+xx = xx-xc;
+
+img = A*exp(-xx.^2./(2*sx^2))  +  base;
+
+err = sum((img-RF).^2);
+
+
+sateln = satel-ro;
+En = sqrt(sum(sateln.*sateln,2));
+En = En*ones(1,length(sateln(1,:)));
+
+sateln = sateln./En;
+
+En = sqrt(sum(dir.*dir,2));
+En = En*ones(1,length(dir(1,:)));
+dir = dir./En;
+
+err = -sateln(:)*dir(:);

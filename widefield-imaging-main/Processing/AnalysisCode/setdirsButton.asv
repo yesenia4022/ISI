@@ -1,0 +1,86 @@
+function setdirsButton
+
+global ACQinfo Analyzer maskS G_handles
+
+
+Gsetdirectories
+
+fno = 1; tno = 1;
+set(handles.frameno,'string',num2str(fno))
+set(handles.trialno,'string',num2str(tno))
+[Im] = Load2phImage(fno,[1 1 0 0],tno);
+
+axes(handles.rimage1);     %Make rimage current figure
+cla
+imageRGB(Im{1},2)        %Load and plot frame
+set(handles.rimage1,'xtick',[],'ytick',[])
+
+axes(handles.rimage2);     %Make rimage current figure
+cla
+imageRGB(Im{2},1)       %Load and plot frame
+set(handles.rimage2,'xtick',[],'ytick',[])
+
+conds = getnoconditions;
+reps = getnorepeats(1);
+set(handles.nocond,'string',num2str(conds))
+set(handles.norep,'string',num2str(reps))
+set(handles.dirstatus,'string','Loaded')
+
+set(handles.setROI,'enable','on')
+set(handles.process,'enable','on')
+
+set(handles.predelay,'string',['predelay=' num2str(getParamVal('predelay'))])
+set(handles.postdelay,'string',['postdelay=' num2str(getParamVal('postdelay'))])
+set(handles.trialtime,'string',['trialtime=' num2str(getParamVal('stim_time'))])
+    
+Nsym = length(Analyzer.loops.conds{1}.symbol);
+
+set(handles.primSymbol,'string',Analyzer.loops.conds{1}.symbol);  %Set the strings in drop down menu
+set(handles.primSymbol,'value',1)
+
+if Nsym > 1
+    set(handles.secSymbol,'string',Analyzer.loops.conds{1}.symbol);  %Set the strings in drop down menu
+    set(handles.secSymbol,'value',2)
+    set(handles.secSymbol,'enable','on')
+    set(handles.secCollapse,'enable','on')
+else
+    set(handles.secSymbol,'enable','off')
+    set(handles.tertSymbol,'enable','off')
+    set(handles.secCollapse,'enable','off')
+    set(handles.tertCollapse,'enable','off')
+end
+
+if Nsym > 2
+    set(handles.tertSymbol,'string',Analyzer.loops.conds{1}.symbol);  %Set the strings in drop down menu
+    set(handles.tertSymbol,'value',3)
+    set(handles.tertSymbol,'enable','on')
+    set(handles.tertCollapse,'enable','on')
+else
+    set(handles.tertSymbol,'enable','off')
+    set(handles.tertCollapse,'enable','off')
+end
+
+a = questdlg('Use last mask info?');
+if strcmp('No',a)
+    maskS = struct;
+    maskS.bw = ones(size(Im{1}));
+end
+
+
+%handle the slider
+nF = ACQinfo.numberOfFrames;
+nT = getnotrials;
+set(handles.frameslide,'value',(fno-1)/(nF-1))
+set(handles.trialslide,'value',(tno-1)/(nT-1))
+
+stepsize = 1/nF;
+set(handles.frameslide,'SliderStep',[stepsize 4*stepsize])
+stepsize = 1/nT;
+set(handles.trialslide,'SliderStep',[stepsize 4*stepsize])
+
+set(handles.showMask,'enable','on')
+
+%%%Patch to account for the wrong trial number provided in the Analyzer for
+%%%the blank conditions.  N.B. the stimulus was generated ok, but the
+%%%Analyzer file is wrong.
+AnalyzerPatch

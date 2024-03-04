@@ -1,0 +1,89 @@
+function [xmicperpix ymicperpix] = getImResolution(varargin)
+
+global ACQinfo
+
+flag16 = 0; %default 40x
+if ~isempty(varargin)
+    flag16 = varargin{1};
+end
+
+%Get image dimensions
+if isfield(ACQinfo,'scanAmplitudeX')
+    xVolt = ACQinfo.scanAmplitudeX/ACQinfo.zoomFactor;
+    yVolt = ACQinfo.scanAmplitudeY/ACQinfo.zoomFactor;
+else %scanimage 3.7.1
+%     xVolt = 1./ACQinfo.zoomones;
+%     yVolt = 1./ACQinfo.zoomones;    
+    xVolt = (ACQinfo.zoomFactor*ACQinfo.baseZoomFactor);  %I don't know if this or the above is correct
+    yVolt = (ACQinfo.zoomFactor*ACQinfo.baseZoomFactor);
+end
+
+
+%Note: x and y refers to the columns and rows of the images, respectively.
+%However, it is actually flipped for the Sutter motor
+
+
+if isfield(ACQinfo,'scanAmplitudeX')
+    if flag16    %16x objective
+        if ~ACQinfo.bidirectionalScan
+            %unidirectional 2 ms/line
+            V = [1 2 3]; 
+            y = [330 695 1032]; x = [360 694 1064];
+        else
+            %bidirectional 0.5 ms/line
+            V = [1 2 3]; 
+            y = [335 687 1013]; x = [346 709 960];
+            %bidirectional 1.0 ms/line
+            %V = [1 2 3]; y = [335 675 1041]; x = [352 700 1050];
+        end
+
+    else  %40x objective:
+        if ~ACQinfo.bidirectionalScan
+            %unidirectional 2 ms/line
+            V = [1 2 3]; 
+            y = [124 256 364]; x = [126 255 377]; %Width of image in microns
+        else
+            %bidirectional 0.5 ms/line
+            V = [0.5 1 1.5 2]; 
+            y = [66 133 207 265]; x = [61 125 189 262];
+        end
+    end
+    
+
+else  %scanimage 3.7.1
+    
+    if flag16    %16x objective
+        
+        %I measured with the 40x and then just used those values to
+        %extrapolate for 16x lens here.
+        V = 1./[1 2 3 4];  %I call it V for volts, but its really 1/zoom, which is proportional to volts
+        y = [315 163 110 83]*40/15; x = [315 147 98 74]*40/15;  %For some reason, the ratio of the two lenses is closer to 40/15, not 40/16
+
+    else  %40x objective        
+          
+        V = 1./[1 2 3 4]; 
+        y = [315 163 110 83]; x = [315 147 98 74];  %Z is zoom
+        
+    end
+    
+
+end
+
+[xmicpervolt xo] = fitVoltsperPix(V,x); [ymicpervolt yo] = fitVoltsperPix(V,y);
+
+xmic = xmicpervolt*xVolt+xo;
+ymic = ymicpervolt*yVolt+yo;
+xmicperpix = xmic/ACQinfo.pixelsPerLine;
+ymicperpix = ymic/ACQinfo.linesPerFrame;
+    
+
+function [pslope pbase] = fitVoltsperPix(x,y)
+
+%Used for scanimage 3.6 and earlier
+
+H = [x(:) ones(length(x),1)];
+p = inv(H'*H)*H'*y(:);
+pslope = p(1);
+pbase = p(2);
+
+

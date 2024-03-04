@@ -1,0 +1,19 @@
+function err = RadonTrxfitter_handle(param)
+
+global RF mu1d sig1d odomglob;
+
+[xpg thetag] = meshgrid(1:length(RF(1,:)),1:length(odomglob));
+
+ffitDori = exp( -(thetag-mu1d).^2/(2*sig1d.^2) );
+
+[xpg thetag] = meshgrid(1:length(RF(1,:)),odomglob);
+
+prefpos = param(1)*cos(thetag*pi/180-param(2));
+ffitDpos = exp( -(xpg-prefpos).^2/(2*param(3).^2) );
+
+ffit = param(4)*ffitDpos.*ffitDori + param(5);
+
+size(ffit)
+size(RF)
+
+err = sum((ffit(:)-RF(:)).^2);

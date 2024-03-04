@@ -1,0 +1,37 @@
+ function [imout bw] = LocalZ(im,R,mmorph,varargin)
+ 
+%im = highpass(im,.2,3); 
+
+im = im.^2;
+ 
+h = ones(R,R)/(R^2);
+mu = filter2(h,im);  %Compute local mean
+st = nlfilter(im,[R R],'Locstd');  %Compute local standard deviation
+imout = (im-mu)./st;  %Compute local Z value
+
+%figure,imagesc(imout), colormap gray
+
+dim = size(imout);
+if mmorph ~= 0
+    D = 1/(mmorph+1);
+    imout = interp2(imout,1:D:dim(2),(1:D:dim(1))');
+end
+
+
+function imF = highpass(im,siglo,sighi) 
+
+dim = size(im);
+[x y] = meshgrid(1:dim(2),1:dim(1));
+x = x-dim(2)/2;
+y = y-dim(1)/2;
+r = sqrt(x.^2 + y.^2);
+
+hlo = exp(-r.^2/(2*siglo^2));
+hlo = hlo/sum(hlo(:));
+
+hhi = exp(-r.^2/(2*sighi^2));
+hhi = hhi/sum(hhi(:));
+
+hh = hlo - hhi;
+
+imF = ifft2(fft2(im).*abs(fft2(hh)));

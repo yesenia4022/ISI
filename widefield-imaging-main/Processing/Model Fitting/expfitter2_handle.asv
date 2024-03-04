@@ -1,0 +1,15 @@
+function err = expfitter2_handle(param)
+
+global yy xx;
+
+dim = length(RF);
+
+B = param(1);
+alp = param(2);
+
+A = param(3);
+
+ffit = B*exp(-alp*xx) + A;
+
+err = sum((ffit-RF).^2);
+

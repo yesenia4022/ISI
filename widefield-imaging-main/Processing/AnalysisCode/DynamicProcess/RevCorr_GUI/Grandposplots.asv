@@ -1,0 +1,416 @@
+function Grandposplots(kern,tauN)
+
+global ACQinfo Analyzer G_RChandles maskS
+
+masklabel = bwlabel(maskS.bwCell{1},4);
+celldom = unique(masklabel);
+[nID] = getNeuronMask;
+
+%Get image dimensions
+xVolt = ACQinfo.scanAmplitudeX/ACQinfo.zoomFactor;
+yVolt = ACQinfo.scanAmplitudeY/ACQinfo.zoomFactor;
+xmic = 94*xVolt-2;  %Kristina fit these lines
+ymic = 135*yVolt+0.5;
+xmicperpix = xmic/ACQinfo.pixelsPerLine;
+ymicperpix = ymic/ACQinfo.linesPerFrame;
+
+expt = [Analyzer.M.anim '_' Analyzer.M.unit '_' Analyzer.M.expt]
+load(['C:\2p_data\' Analyzer.M.anim '\log_files\' expt],'domains')
+
+dsamp = 1;
+if dsamp
+    '%%%%%%%%%%Downsampling%%%%%%%%%%%%%%%'
+    domains.xdom = domains.xdom(1:2:end);
+    domains.oridom = (domains.oridom(1:2:end)+domains.oridom(2:2:end))/2;    
+    %domains.oridom = domains.oridom(1:2:end);  
+    
+end
+
+ptime = ACQinfo.msPerLine/ACQinfo.pixelsPerLine;  %pixel time (ms)
+
+eval(['kernDel = ' get(G_RChandles.kernelLength,'string')  ';']);
+tauL = kernDel(2)-kernDel(1); %ms
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine; 
+Ntau = round(tauL/acqPeriod)+1;
+taudom = (0:Ntau-1)*acqPeriod + kernDel(1);  %it will start at exactly kernDel(1) with acqPeriod spacing, and end at an estimate of kernDel(2)
+
+delayWin = [200 600];  %assume the peak response is within this time window
+[dum delayWinID(1)] = min(abs(delayWin(1)-taudom));
+[dum delayWinID(2)] = min(abs(delayWin(2)-taudom));
+
+Ncell = length(kern);
+
+%Get the receptive field
+
+kernsmooth = getSmoother([.2 .5 .7 1 .7 .5 .2],[.2 .5 1 .5 .2],[.2 .6 1 .6 .2],taudom,domains.oridom,domains.xdom);
+orismoother = getSmoother([.1 .5 1 .5 .1],[.5 1 .5],[.4 1 .4],taudom,domains.oridom,domains.xdom);
+possmoother = getSmoother([.1 .3 .6 1 .6 .3 .1],[.2 .5 1 .5 .2],[.2 .5 1 .5 .2],taudom,domains.oridom,domains.xdom);
+%possmoother = getSmoother([.1 .5 .8 1 .8 .5 .1],[.1 .3 1 .3 .1],[.1 .3 1 .3 .1],taudom,domains.oridom,domains.xdom);
+
+xpos = NaN*ones(1,Ncell);
+ypos = NaN*ones(1,Ncell);
+param(5) = -36;
+
+figure
+for p = 1:Ncell
+    
+    kernplot_b = squeeze(kern{p}(:,:,1,:));
+    kernplot_w = squeeze(kern{p}(:,:,2,:));    
+    
+    kerndum_b = ifftn(fftn(kernplot_b).*abs(fftn(kernsmooth)));
+    kerndum_b = kerndum_b(:,:,delayWinID(1):delayWinID(2));  %limit it to a reasonable time window
+    kerndum_w = ifftn(fftn(kernplot_w).*abs(fftn(kernsmooth)));
+    kerndum_w = kerndum_w(:,:,delayWinID(1):delayWinID(2));  %limit it to a reasonable time window
+    
+    kernplot_b = ifftn(fftn(kernplot_b).*abs(fftn(possmoother)));
+    kernplot_w = ifftn(fftn(kernplot_w).*abs(fftn(possmoother)));
+
+    [ma idma] = max(kerndum_b+kerndum_w,[],3); %find maxima from smoothed version
+    [bestoriid bestposid] = find(ma == max(ma(:)));
+    tau = idma(bestoriid,bestposid) + delayWinID(1) - 1;
+    
+    im_b = kernplot_b(:,:,tau);
+    im_w = kernplot_w(:,:,tau);
+    
+    padder = zeros(length(im_b(:,1)),0);
+    im_b = [padder im_b padder];
+    im_w = [padder im_w padder];
+    
+    degperpix = getparam('x_size')/length(im_b(1,:));     
+    
+    im_b = phi(im_b-prctile(im_b(:),.1));
+    im_w = phi(im_w-prctile(im_w(:),.1));    
+    
+%     for i = 1:length(domains.oridom)     
+%         tc = im_b(i,:) + im_b(i,:);     
+%         [param ffit varaccount] = Gaussfit(1:length(tc),tc,0);
+%         imfit(:,i) = ffit;
+%     end
+    
+    imfit = im_b'+im_w';
+    imfit = phi(imfit-prctile(imfit(:),50));
+    %imfit(:,end/2:end) = 0;
+    
+    RF = iradon(imfit,domains.oridom,'none','linear',1,length(imfit(:,1)));
+    %RF = backproj(imfit,domains.oridom);
+    RF = phi(RF-prctile(RF(:),95));
+    
+    hh = zeros(size(RF));
+    hh(1:5,1:5) = [.1 .3 1 .3 .1]'*[.1 .3 1 .3 .1];
+    RF = ifft2(fft2(RF).*abs(fft2(hh)));
+    
+%     [xpos(p) ypos(p)] = getmaxLoc(RF,30);  %returns 'degrees'         
+    
+    otc = max(imfit);
+  
+    [dum ohat] = orifind(otc',domains.oridom);
+    
+    [param ffit varaccount] = Gaussfit2Drot(RF,ohat);
+    xpos(p) = param(2)*degperpix;
+    ypos(p) = param(1)*degperpix;   
+    xsize(p) = param(3)*degperpix;
+    ysize(p) = param(4)*degperpix;
+    
+    if ysize(p)>xsize(p)
+        param(5) = param(5)+90;
+    else
+        param(5) = param(5);
+    end
+    if param(5) < 0
+        param(5) = 180+param(5);
+    end
+    if param(5) > 180
+        param(5) = param(5)-180;
+    end
+Opref(p) = ohat;
+Opreffit(p) = param(5);
+Omagfit(p) = max([xsize(p) ysize(p)])/min([xsize(p) ysize(p)]);  %aspect ratio
+    
+%     [yma xma] = find(RF == max(RF(:)));
+%     xdom = linspace(0,1,length(RF(1,:)))*getparam('x_size');
+%     ydom = linspace(0,1,length(RF(:,1)))*getparam('x_size');   %don't use 'y_size' 
+%     xmarg = mean(RF);     
+%     ymarg = mean(RF,2)'; 
+%     xmarg = RF(yma,:);
+%     ymarg = RF(:,xma)';
+%     xmarg = xmarg/sum(xmarg);
+%     ymarg = ymarg/sum(ymarg);
+%     xpos(p) = sum(xmarg.*xdom);
+%     ypos(p) = sum(ymarg.*ydom);
+    
+
+    xdom = (0:length(RF(1,:))-1)*degperpix; %degrees
+    ydom = (0:length(RF(:,1))-1)*degperpix;   %don't use 'y_size'
+    RF = RF/max(RF(:));
+    if p == 1
+        [yma xma] = find(RF == max(RF(:)));
+        yran = yma-5:yma+5;
+        xran = xma-5:xma+5;
+        yran = 1:length(ydom);
+        xran = 1:length(xdom);
+    end
+    dim = size(RF);
+    RF = RF(yran,xran); ffit = ffit(yran,xran); ydom = ydom(yran); xdom = xdom(xran);   
+    
+    subplot(ceil(sqrt(Ncell)),ceil(sqrt(Ncell)),p)
+    imagesc(xdom,ydom,RF), %title(num2str(param(5)))
+    hold on
+    contour(xdom,ydom,ffit,.6,'k')
+    axis image
+    drawnow
+    axis off
+    if p == 1
+        title([num2str(ydom(end)-ydom(1)) 'degrees'])
+    end
+
+%     contour(xdom,ydom,RF,.5,'k'), axis ij
+%     hold on
+% %     ylim([1.5 3.8])
+% %     xlim([.2 2.3])
+%     drawnow
+    
+    %plot([mean(kernplot_b(4:5,:))' mean(kernplot_w(4:5,:))'])
+    
+end
+
+% thet = 40;
+% xposp = xpos*cos(thet) + ypos*sin(thet);
+% yposp = -xpos*sin(thet) + ypos*cos(thet);
+
+%Fit plane
+for p = 1:Ncell
+    [idcelly idcellx] = find(masklabel == celldom(nID(p)));
+    CoM(p,:) = [mean(idcelly) mean(idcellx)];  %center of mass
+end
+CoM(:,1) = CoM(:,1)*ymicperpix/1000;  %mm
+CoM(:,2) = CoM(:,2)*xmicperpix/1000;
+H = [CoM ones(Ncell,1)];
+
+dv = inv(H'*H)*H'*ypos(:);  %v slope - vertical retinotopic coordinates
+yposhat = H*dv;
+du = inv(H'*H)*H'*xpos(:);  %u slope - horizontal retinotopic coordinates
+xposhat = H*du;
+
+vmmperdeg = 1/sqrt(dv(1)^2 + dv(2)^2)
+ummperdeg = 1/sqrt(du(1)^2 + du(2)^2)
+
+dudy = du(1); dudx = du(2); dvdy = dv(1); dvdx = dv(2);  %x and y are horizontal and vertical brain coordinates
+Vratio = 1./abs(dudx*dvdy - dudy*dvdx)  %Determinant computes mm^2/deg^2
+
+%This way was a bigger PITA than just doing PCA
+% vecs = [dudx+1i*dudy   dvdx+1i*dvdy  -dudx-1i*dudy  -dvdx-1i*dvdy];  %each corner of the square
+% vecs2 = abs(vecs).*exp(1i*angle(vecs)*2);  %rotate
+% Res = sum(vecs2) / sum(abs(vecs))
+% distorfactor = abs(Res)  %distortion factor
+% PrincAng = angle(sqrt(Res))*180/pi  %angle of max slope (deg/mm) counter-cw from horizontal
+% prinvec = [cos(PrincAng*pi/180) sin(PrincAng*pi/180)]/sqrt(2);
+% OrthAng = angle(sqrt(Res)*exp(1i*pi/2))*180/pi; %rotate by 90
+% orthvec = [cos(OrthAng*pi/180) sin(OrthAng*pi/180)]/sqrt(2);
+% sqrt(sum((prinvec*[[dudx dudy]' [dvdx dvdy]']).^2))
+% sqrt(sum((orthvec*[[dudx dudy]' [dvdx dvdy]']).^2))
+
+X = [dudy dudx;  dvdy dvdx ;  -dudy -dudx ;  -dvdy -dvdx];
+[COEFF,SCORE,latent] = princomp(X);
+PrincAng = atan(COEFF(1,1)/COEFF(2,1))*180/pi
+OrthAng = atan(COEFF(1,2)/COEFF(2,2))*180/pi
+PrincMag = sqrt(latent(1))
+OrthMag = sqrt(latent(2))
+distortfactor = PrincMag/OrthMag
+
+dv_ang = atan(dvdy/dvdx)*180/pi;
+du_ang = atan(dudy/dudx)*180/pi;
+xyoridiff = oridiff(dv_ang*pi/180,du_ang*pi/180)*180/pi  %90 means that they are perpendicular
+
+
+%Now plot color image of tuning
+xposhat = phi(xposhat-prctile(xpos,.5));
+yposhat = phi(yposhat-prctile(ypos,.5));
+xpos = phi(xpos-prctile(xpos,.5));
+ypos = phi(ypos-prctile(ypos,.5));
+
+xposIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+yposIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+xposhatIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+yposhatIm = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+msk = maskS.neuronmask;
+for c = 1:length(domains.colordom)
+
+    for p = 1:Ncell
+
+        idcell = find(masklabel(:) == celldom(nID(p)));
+        
+        xposIm(idcell) = xpos(p);
+        yposIm(idcell) = ypos(p);
+        
+        xposhatIm(idcell) = xposhat(p);
+        yposhatIm(idcell) = yposhat(p);
+
+    end
+
+    
+    xyran = max([prctile(xpos,99) prctile(ypos,99)]);
+    figure,
+    subplot(2,2,1), imagesc(xposIm,'AlphaData',msk, [0 xyran]), colorbar
+    title('x position'), axis image
+    subplot(2,2,2), imagesc(yposIm,'AlphaData',msk, [0 xyran]), colorbar
+    title('y position'), axis image
+    
+    subplot(2,2,3), imagesc(xposhatIm,'AlphaData',msk, [0 xyran]), colorbar
+    title([num2str(ummperdeg) 'mm/deg']), axis image
+    subplot(2,2,4), imagesc(yposhatIm,'AlphaData',msk, [0 xyran]), colorbar
+    title([num2str(vmmperdeg) 'mm/deg']), axis image
+
+
+end
+
+    
+figure
+for p = 1:length(kern)
+    
+    kernplot_b = squeeze(kern{p}(:,:,1,:));
+    kernplot_w = squeeze(kern{p}(:,:,2,:));    
+    
+    kerndum_b = ifftn(fftn(kernplot_b).*abs(fftn(kernsmooth)));
+    kerndum_b = kerndum_b(:,:,delayWinID(1):delayWinID(2));  %limit it to a reasonable time window
+    kerndum_w = ifftn(fftn(kernplot_w).*abs(fftn(kernsmooth)));
+    kerndum_w = kerndum_w(:,:,delayWinID(1):delayWinID(2));  %limit it to a reasonable time window
+    
+    kernplot_b = ifftn(fftn(kernplot_b).*abs(fftn(possmoother)));
+    kernplot_w = ifftn(fftn(kernplot_w).*abs(fftn(possmoother)));
+
+    [ma idma] = max(kerndum_b+kerndum_w,[],3); %find maxima from smoothed version
+    [bestoriid bestposid] = find(ma == max(ma(:)));
+    tau = idma(bestoriid,bestposid) + delayWinID(1) - 1;
+    
+%     tcori_b = kernplot_b(:,bestposid,tau);  %Can't do this dumb assssss!!!
+%     tcori_w = kernplot_w(:,bestposid,tau);
+
+    %tcori_b = mean(kernplot_b(:,:,tau),2);  %Shouldn't do this either. If it is actually a projection then they will all be equal
+    %tcori_w = mean(kernplot_w(:,:,tau),2);
+    %tcori = tcori_b+tcori_w;
+    
+    tcori = max(kernplot_b(:,:,tau)+kernplot_w(:,:,tau),[],2);  
+
+    [OMag(p) OAng(p)] = orifind(tcori,domains.oridom);    
+    
+    subplot(ceil(sqrt(Ncell)),ceil(sqrt(Ncell)),p)   
+    
+    plot(tcori)
+    
+end
+%OAng = Opreffit;
+%OMag = Omagfit;
+
+xposRes = xpos - xposhat';
+yposRes = ypos - yposhat';
+doriAll = [];
+dretAll = [];
+for i = 1:length(xpos)
+    for j = i+1:length(ypos)
+        
+        dori = oridiff(OAng(i)*pi/180,OAng(j)*pi/180)*180/pi;
+        dret = sqrt((xposRes(i)-xposRes(j))^2 + (yposRes(i)-yposRes(j))^2);
+        
+        doriAll = [doriAll dori];
+        dretAll = [dretAll dret];
+        
+    end
+end
+
+[R p] = corrcoef(doriAll,dretAll);
+R = R(1,2);
+p = p(1,2);
+
+% [mat xdom ydom] = smoothscatter(doriAll,dretAll,.5,.005);
+% 
+% figure,
+% subplot(1,2,2),imagesc(xdom,ydom,mat), axis xy
+% subplot(1,2,1),scatter(doriAll,dretAll,'.k')
+% xlim([xdom(1) xdom(end)]), ylim([ydom(1) ydom(end)])
+% title(['R = ' num2str(R)  '  p = ' num2str(p)])
+% xlabel('dori (degrees)'), ylabel('dret (degrees)')
+
+
+mag = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+ang = zeros(ACQinfo.linesPerFrame,ACQinfo.pixelsPerLine);
+
+figure, hist(OAng)
+
+for c = 1:length(domains.colordom)
+    OMag = OMag-prctile(OMag,0);
+    OMag = OMag/prctile(OMag,100);
+
+
+    for p = 1:Ncell
+
+        idcell = find(masklabel(:) == celldom(nID(p)));
+
+        mag(idcell) = OMag(p);
+        ang(idcell) = OAng(p)+10;
+
+    end
+
+    figure,
+    imagesc(ang,'AlphaData',(mag),[0 180]), colormap hsv, colorbar, axis image
+    
+    
+    hypP = 10;
+    hypO = hypP*OrthMag/PrincMag;
+    hold on
+    plot([0 hypP*cos(PrincAng*pi/180)]+4,[0 hypP*sin(PrincAng*pi/180)]+8,'k')
+    hold on
+    plot([0 hypO*cos(OrthAng*pi/180)]+4,[0 hypO*sin(OrthAng*pi/180)]+8,'k')
+
+end
+
+
+function smoother = getSmoother(ktau,kori,kpos,taudom,oridom,posdom)
+
+if length(oridom) == 1
+    kori = 1;
+end
+
+ktau = [ktau zeros(1,length(taudom)-length(ktau))];
+kpos = [kpos zeros(1,length(posdom)-length(kpos))];
+kori = [kori zeros(1,length(oridom)-length(kori))];
+kdum = kori'*kpos;
+for i = 1:length(ktau)
+    smoother(:,:,i) = kdum*ktau(i);
+end
+smoother = smoother/sum(smoother(:));
+
+
+function [OMag OAng] = orifind(G,oridomain)
+
+R = sum(G'.*exp(1i*oridomain*pi/90));
+OAng = angle(R);                 %-pi to pi
+OAng = OAng + pi*(1-sign(OAng+eps));  %0 to 2pi
+OAng = OAng*90/pi;               %0 to 180
+OMag = abs(R)/(sum(G));
+
+
+function [xpos ypos] = getmaxLoc(RF,D)
+
+xdom = linspace(0,1,length(RF(1,:)))*getparam('x_size'); %degrees
+ydom = linspace(0,1,length(RF(:,1)))*getparam('x_size');   %don't use 'y_size'
+[xmat ymat] = meshgrid(xdom,ydom);
+
+xdomI = linspace(xdom(1),xdom(end),D*length(xdom));
+ydomI = linspace(ydom(1),ydom(end),D*length(ydom));
+[xmatI ymatI] = meshgrid(xdomI,ydomI);
+RFI = interp2(xmat,ymat,RF,xmatI,ymatI);
+
+[yma xma] = find(RFI == max(RFI(:)));
+xpos = xdomI(xma);
+ypos = ydomI(yma);
+
+
+function dist = oridiff(angle1,angle2)
+
+%pepOriDiff        Returns the difference between the angles in angle1
+%                  and angle2 in the orientation domain (that is they
+%                  wrap around at pi radians!!!  The angles should be in rad.
+
+w1 = exp(1i*2*angle1);
+w2 = exp(1i*2*angle2);
+dist = angle(w1 ./ w2)/2;

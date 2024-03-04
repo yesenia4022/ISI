@@ -1,0 +1,11 @@
+function out = blankflag
+
+global Analyzer
+
+nc = getnorepeats;
+
+if strcmp(Analyzer.loops.conds{nc}.symbol{1},'blank');
+    out = 1;
+else
+    out = 0;
+end

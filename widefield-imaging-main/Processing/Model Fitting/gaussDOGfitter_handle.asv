@@ -1,0 +1,19 @@
+function err = gaussDOGfitter_handle(param)
+
+global RF;
+
+dim = size(RF);
+
+[xx yy] = meshgrid(1:dim(2),1:dim(1));
+yy = yy-xc1;
+xx = xx-xc2;
+
+Gfit = exp(-((1:length(RF(:,1)))-param(1)).^2/(2*param(2).^2)); 
+G1 = param(3)*exp(-logdom.^2/(2*param(4).^2));
+G2 = exp(-logdom.^2/(2*param(5).^2));
+DoG = G1 - G2;
+ffit = param(7) + param(6)*(Gfit' * DoG);
+
+img = A*exp(-xx.^2./(2*sx2^2)).*exp(-yy.^2./(2*sx1^2))  +  base;
+
+err = sum((img(:)-RF(:)).^2);

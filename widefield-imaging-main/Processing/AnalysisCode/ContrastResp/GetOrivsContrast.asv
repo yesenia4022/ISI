@@ -1,0 +1,58 @@
+function [f0 ori cont] = GetOrivsContrast(f0dum,hh)
+
+global pepANA
+%Each element of the cell array 'f0dum' is the average image for the
+%corresponding condition
+
+bflag = stimblank(getnoconditions);
+
+
+symb = 'ori';
+
+Nsym = length(Analyzer.loops.conds{1}.symbol);  %number of looping params
+for idsym = 1:length(Nsym)
+    if strcmp(symb,Analyzer.loops.conds{1}.symbol{idsym});
+        break
+    end
+end
+
+bflag = stimblank(getnoconditions); %if a blank exists in this experiment
+if bflag
+    f0blank = f0{end};
+    f0(end) = [];
+end
+
+for i = 1:length(f0)
+    axisdom(i) = Analyzer.loops.conds{i}.val{idsym};
+end
+
+k = 1;
+for i = 0:length(f0dum)-1 
+    pepsetcondition(i)
+    if(~pepblank)       %This loop filters out the blanks  
+        for z = 1:length(pepANA.listOfResults{i+1}.values)  %loop through each loop parameter
+            if strcmp(pepANA.listOfResults{i+1}.symbols(z),'ori')
+                paramIDori = z;
+            elseif strcmp(pepANA.listOfResults{i+1}.symbols(z),'contrast')
+                paramIDcont = z;                
+            end
+        end
+        v = pepgetvalues;
+        ori(k) = v(paramIDori);
+        cont(k) = v(paramIDcont);
+        f0{k} = f0dum{i+1};
+        k = k+1;
+    else
+        f0blank = f0dum{i+1};
+        bflag = 1;
+    end
+end
+
+
+%if a filter exists, use it...
+if ~isempty(hh)
+    id = find(isnan(orimap));
+    orimap(id) = 0;
+    orimap = ifft2(abs(fft2(hh)).*fft2(orimap));    
+end
+

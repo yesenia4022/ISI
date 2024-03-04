@@ -1,0 +1,244 @@
+function [Pxhat Pyhat] = getTrialMotion3(CH)
+
+global ACQinfo
+% 
+% tf = imformats('tif');
+% info = feval(tf.info, filepath);
+% infoH = info(1).ImageDescription;
+% imgHeader = parseHeaderNew(infoH);
+% ACQinfo = imgHeader.acq;
+
+Idim = [ACQinfo.linesPerFrame ACQinfo.pixelsPerLine];
+Fperiod = ACQinfo.msPerLine*ACQinfo.linesPerFrame; %frame period in ms
+
+
+%Light smoothing of the data across time
+% tkern = [0 1 0];
+% tkern = tkern/sum(tkern);
+% kern = zeros(Idim(1),Idim(2),length(tkern));
+% for i = 1:length(tkern)
+%     kern(:,:,i) = ones(Idim(1),Idim(2))*tkern(i);
+% end
+% 
+% smoother = zeros(size(CH));
+% smoother(:,:,1:length(tkern)) = kern;
+% 
+% smoother = abs(fft(smoother,[],3));
+% CHsfilt = ifft(fft(CH,[],3).*smoother,[],3);
+
+CHsfilt = CH;
+
+%Smooth data in space
+
+totalzoom = 2.5/ACQinfo.scanAmplitudeY*ACQinfo.zoomFactor;
+linesPerMic = ACQinfo.linesPerFrame/(300/totalzoom);
+smoothW = ceil(3.8/(linesPerMic));  %3.8 is a heuristically determined constant that seems to work pretty well
+
+skern = hann(smoothW)';
+skern = skern'*skern;
+skern = skern/sum(skern(:));
+smoother = zeros(Idim(1),Idim(2));
+smoother(1:length(skern(:,1)),1:length(skern(1,:))) = skern;
+smoother = abs(fft2(smoother));
+
+CHsfilt(1,:,:) = CHsfilt(2,:,:);
+CHsfilt(end,:,:) = CHsfilt(end-1,:,:);
+CHsfilt(:,1,:) = CHsfilt(:,2,:);
+CHsfilt(:,end,:) = CHsfilt(:,end-2,:);
+CHsfilt(:,end-1,:) = CHsfilt(:,end-2,:);
+%CHsfilt(end-2:end,:) = ones(3,1)*CHsfilt(end-3,:);
+for i = 1:length(CHsfilt(1,1,:))
+    CHsfilt(:,:,i) = ifft2(fft2(CHsfilt(:,:,i)).*smoother);
+end
+
+%CHsfilt = CH;
+
+%Get spatio-temporal gradient 
+% fstart = 2;
+% Chdum = CHsfilt(:,:,fstart:end-1);
+Chdum = CHsfilt;
+
+[dFdx dFdy dFdt] = gradient(Chdum); %change per pixel, and change per frame
+
+fstart = 2;
+dFdx = dFdx(:,:,fstart:end-2);
+dFdy = dFdy(:,:,fstart:end-2);
+dFdt = dFdt(:,:,fstart:end-2);
+
+msperframe = ACQinfo.msPerLine*ACQinfo.linesPerFrame;
+msperbin = 35;   %35ms is a heuristically determined constant that tends to work well;
+Nbins = round(msperframe/msperbin);
+for i = 1:Nbins
+    if rem(i,2)
+        lperbin(i) = floor(ACQinfo.linesPerFrame/Nbins);
+    else
+        lperbin(i) = ceil(ACQinfo.linesPerFrame/Nbins);
+    end
+end
+
+for i = 1:Nbins
+    
+    yran = ((i-1)*lperbin(i)+1):lperbin(i)*i;    
+    
+    tensX = dFdx(yran,:,:);
+    tensY = dFdy(yran,:,:);
+    tensT = dFdt(yran,:,:);
+
+    for tau = 1:length(tensT(1,1,:))
+%         xdum = tensX(:,:,tau);
+%         ydum = tensY(:,:,tau);
+%         tdum = tensT(:,:,tau);
+        xdum = tensX(2:end-1,2:end-1,tau);  %The edges are usually crappy
+        ydum = tensY(2:end-1,2:end-1,tau);
+        tdum = tensT(2:end-1,2:end-1,tau);
+        
+%         H = [xdum(:) ydum(:)];  %plane should go through the origin: time derivative is zero when spatial derivs are zero        
+%         Vxy = inv(H'*H)*H'*tdum(:);  
+
+        dum = xdum.*ydum.*tdum;
+        id = find(~isnan(dum(:)));
+        pc = princomp([xdum(id) ydum(id) tdum(id)]);
+
+        pc12 = pc(:,1:2)';
+        H = pc12(:,1:2); y = pc12(:,3);
+        Vxy = inv(H'*H)*H'*y;
+
+        VxMat(i,tau) = Vxy(1);  %pixels per frame
+        VyMat(i,tau) = Vxy(2);
+    end
+%     if i == 2
+%         figure, plot(ydum(:),tdum(:),'.')
+%         hold on
+%         plot([-3000 3000],[-3000 3000]*Vxy(2))
+%         xlim([-500 500]),ylim([-500 500])
+%         Vxy(2)
+%         xlabel('space derivative')
+%         ylabel('time derivative')
+%         asdf
+%     end
+    
+end
+
+
+%Interleave the bins to create the continuous sequence
+Vx = zeros(1,numel(VxMat));
+Vy = zeros(1,numel(VyMat));
+for i = 1:length(VxMat(:,1))
+    
+    Vx(i:Nbins:end) = VxMat(i,:);
+    Vy(i:Nbins:end) = VyMat(i,:);
+    
+end
+
+%median filter gets rid of big transients caused by instability in PCA
+% Vx = medfilt1(Vx,5);
+% Vy = medfilt1(Vy,5);
+
+%This next part gets rid of large transients
+prcXh = prctile(Vx,95); prcXl = prctile(Vx,5);
+idX = find(Vx<prcXh & Vx>prcXl);
+prcYh = prctile(Vy,95); prcYl = prctile(Vy,5);
+idY = find(Vy<prcYh & Vy>prcYl);
+
+idbad = find((Vx-mean(Vx(idX))) > 3*std(Vx(idX)) | (Vx-mean(Vx(idX))) < -3*std(Vx(idX)));
+Vx(idbad) = 0;
+idbad = find((Vy-mean(Vy(idY))) > 3*std(Vy(idY)) | (Vy-mean(Vy(idY))) < -3*std(Vy(idY)));
+Vy(idbad) = 0;
+sp = lperbin(1)*ACQinfo.msPerLine/1000;
+tdom = (0:length(Vx)-1)*sp;
+
+
+%fit a sine wave
+fdom = linspace(0,1/sp,length(Vx)+1);
+fdom = fdom(1:end-1);
+%Vx = Vx-median(Vx); Vy = Vy-median(Vy);
+Hx = fft(Vx); Hy = fft(Vy);
+startf = .3; endf = 3;  %A liberal range for where the harmonic is
+endf = min([fdom(floor(end/2)) endf]);
+idfrange = find(fdom>=startf & fdom<=endf); 
+if max(abs(Hx(idfrange))) > max(abs(Hy(idfrange)))
+    H = Hx;
+else
+    H = Hy;
+end
+%figure,stem(fdom,abs(H),'.')
+
+id1 = find(H == max(H(idfrange)));
+id2 = find(H == max(H(idfrange)));
+fo = fdom(id1);
+
+% Perform a more fine search of the right frequency than the sampling of the
+% Fourier basis.  i.e. when the "best" freq does not have an integer number
+% of periods within the trial, it will mess things up.
+fp = fdom(2)-fdom(1);
+fsearch = linspace(fo-fp/2,fo+fp/2,20);
+for i = 1:length(fsearch)
+    harmR = cos(2*pi*fsearch(i)*tdom);
+    harmI = -sin(2*pi*fsearch(i)*tdom);
+    
+    harmR = harmR/sum(harmR.^2);
+    harmI = harmI/sum(harmI.^2);
+    harm = 1i*harmI + harmR;
+    
+    Hxlocal(i) = sum(harm.*Vx);
+    Hylocal(i) = sum(harm.*Vy);
+end
+
+[dum id] = max(abs(Hylocal));
+
+
+%Resample such that each sample is for each line scanned during the trial
+sphat = ACQinfo.msPerLine/1000;
+tdomhat = (0:Idim(1)*length(CH(1,1,:))-1)*sphat;
+tdomhat = tdomhat - (Idim(1)*sphat)*(fstart-1);
+Vxhat = abs(Hxlocal(id))*cos(2*pi*fsearch(id)*tdomhat + angle(Hxlocal(id)));
+Vyhat = abs(Hylocal(id))*cos(2*pi*fsearch(id)*tdomhat + angle(Hylocal(id)));
+
+%Now correct for slow motion
+id = find(fdom < .1);
+
+for i = 2:id(end)
+    
+    harmR = cos(2*pi*fdom(i)*tdom);
+    harmI = -sin(2*pi*fdom(i)*tdom);
+    
+    harmR = harmR/sum(harmR.^2);
+    harmI = harmI/sum(harmI.^2);
+    harm = 1i*harmI + harmR;
+    
+    Hxdum = sum(harm.*Vx);
+    Hydum = sum(harm.*Vy);
+    
+    Vxhat = Vxhat + abs(Hxdum)*cos(2*pi*fdom(i)*tdomhat + angle(Hxdum));
+    Vyhat = Vyhat + abs(Hydum)*cos(2*pi*fdom(i)*tdomhat + angle(Hydum));
+    
+end
+
+
+figure(22)
+subplot(1,2,1), plot(tdom,[Vx' Vy'])
+hold on
+plot(tdomhat,[Vxhat' Vyhat'])
+xlabel('seconds'),ylabel('derivative (pixels/frame)')
+legend('x position','y position')
+hold off
+
+Px = -cumsum(Vx)/Nbins;
+Py = -cumsum(Vy)/Nbins;
+Pxhat = -cumsum(Vxhat)/Nbins*length(tdom)/length(tdomhat);
+Pyhat = -cumsum(Vyhat)/Nbins*length(tdom)/length(tdomhat);
+
+Px = Px-mean(Px);
+Pxhat = Pxhat-mean(Pxhat);
+Py = Py-mean(Py);
+Pyhat = Pyhat-mean(Pyhat);
+
+
+subplot(1,2,2), plot(tdom,[Px' Py'])
+hold on
+plot(tdomhat,[Pxhat' Pyhat'])
+xlabel('seconds'),ylabel('position (pixels)')
+legend('x position','y position')
+hold off
+
+

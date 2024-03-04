@@ -1,0 +1,182 @@
+function kern = getrevcorrkernel(CHs,bwCell1,taudom)
+
+
+global ACQinfo Analyzer
+
+%%%%
+
+masklabel = bwlabel(bwCell1);
+celldom = unique(masklabel);
+celldom = celldom(1:end);
+
+%%%%
+
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine;  %ms per acquired frame
+ptime = ACQinfo.msPerLine/ACQinfo.pixelsPerLine;  %pixel time (ms/pixel)
+
+dtau = taudom(2)-taudom(1);
+
+%Tf = 1000/pepParam('refresh');  %Frame period in ms (CRT)
+Tf = 1000/60;  %Frame period in ms  (LCD monitor)
+
+hper = getparam('h_per');
+%hper = hper(1);
+hper = 1;
+Tupdate = Tf*hper;
+
+expt = [Analyzer.M.anim '_' Analyzer.M.unit '_' Analyzer.M.expt]
+load(['C:\2p_data\' Analyzer.M.anim '\log_files\' expt])
+%load(['F:\neurostuff\log_files\' expt])
+for i = 1:5
+    if Analyzer
+rseeds = eval(Analyzer.L.param{1}{2});
+
+dim = [length(domains.oridom) length(domains.sfdom) length(domains.phasedom) length(domains.colordom)];
+
+for i = 1:length(rseeds)
+    
+    eval(['colorS = rseed' num2str(i) '.colorseq;']);
+    eval(['phaseS = rseed' num2str(i) '.phaseseq;']);
+    eval(['sfS = rseed' num2str(i) '.sfseq;']);
+    eval(['oriS = rseed' num2str(i) '.oriseq;']);
+    
+    colorseq{i} = domains.colordom(colorS);   
+    phaseseq{i} =  domains.phasedom(phaseS);  
+    sfseq{i} =  domains.sfdom(sfS);     
+    oriseq{i} =  domains.oridom(oriS);  
+ 
+end
+
+% if round(oridom(end)) == 999
+%     oridom = oridom(1:end-1);
+% end
+
+%%%%%%%%%%%%%%%%%%%
+oridom = domains.oridom;
+sfdom = domains.sfdom;
+phasedom = domains.phasedom;
+
+Ncell = length(celldom);
+NT = getnotrials;
+
+figure
+for p = 1:Ncell
+
+    [idcelly idcellx] = find(masklabel == celldom(p));
+    idcell = find(masklabel(:) == celldom(p));
+
+    CoM = [mean(idcelly) mean(idcellx)];  %center of mass
+
+    tau_xy = (CoM(1)-1)*ACQinfo.msPerLine + ptime*CoM(2);
+
+    countmat{p} = zeros(length(oridom),length(sfdom),length(phasedom),length(taudom));
+    kern{p} = zeros(length(oridom),length(sfdom),length(phasedom),length(taudom));
+
+    for T = 1:length(CHs)
+
+        clear tcourse
+        for z = 1:length(CHs{T}{1}(1,1,:))-1 %don't use last frame
+            CHsdum = CHs{T}{1}(:,:,z);
+            %tcourse(z) = (mean(CHsdum(idcell)) - mean(CHsdum(:)))/std(CHsdum(:));
+            tcourse(z) = mean(CHsdum(idcell));
+            
+        end
+
+
+        %         fdom = linspace(0,1000/acqPeriod,length(tcourse)+1);
+        %         fdom = fdom(1:end-1);
+        %         figure,plot(fdom,abs(fft(tcourse-mean(tcourse))))
+
+        tcourse = LFPfilt(tcourse(:)',0,1000/acqPeriod,4,.02);
+        %tcourse = BandErase(tcourse(:)',1000/acqPeriod,.66,.43);  %Breathing artifact
+
+        %         hold on,plot(fdom,abs(fft(tcourse)),'r')
+        %         asdf
+
+        %     hW = 21;
+        %     hh = zeros(1,length(tcourse));
+        %     hh(1:hW) = ones(1,hW);
+        %     hh = -hh/sum(hh);
+        %     hh(ceil(hW/2)) = hh(11) + 1;
+        %     tcourse = ifft(fft(tcourse).*abs(fft(hh')));
+
+        tcourse = zscore(tcourse);
+        
+        tdom = (0:length(tcourse)-1)*acqPeriod;
+        tdom_pix = tdom + tau_xy - ACQinfo.stimPredelay*1000 - 50;   %time domain of the pixel relative to onset of first stimulus
+        
+        [cond] = getcondrep(T);
+%         oriseqdum = oriseq{cond}(1:hper:end);
+%         sfseqdum = sfseq{cond}(1:hper:end);
+
+        oriseqdum = oriseq{cond}(1:end);
+        sfseqdum = sfseq{cond}(1:end);       
+        phaseseqdum = phaseseq{cond}(1:end);  
+
+        for ori = 1:length(oridom)
+            for sf = 1:length(sfdom)
+                for phase = 1:length(phasedom)
+                    
+                    id = find(oriseqdum == oridom(ori) & sfseqdum == sfdom(sf) & phaseseqdum == phasedom(phase));
+                    stimes = (id-1)*Tupdate; %Stimulus times
+                    
+                    for i = 1:length(stimes)
+                        
+                        for tauid = 1:length(taudom)
+                            
+                            idx = find(tdom_pix>stimes(i)+taudom(tauid)-dtau/2 & tdom_pix<stimes(i)+taudom(tauid)+dtau/2);
+                            
+                            if ~isempty(idx)
+                                kern{p}(ori,sf,phase,tauid) = kern{p}(ori,sf,phase,tauid) + mean(tcourse(idx));
+                                countmat{p}(ori,sf,phase,tauid) = countmat{p}(ori,sf,phase,tauid) + 1;
+                            end
+                        end
+                        
+                    end
+                end
+            end
+        end
+    end
+    kern{p} = kern{p}./countmat{p};
+
+    %normer = ones(length(kern{p}(:,1)),1)*mean(kern{p});
+    %kern{p} = kern{p}-normer;
+    
+    kernplot = squeeze(mean(kern{p}(1:end,2:end-1,:,:),3));
+    %kernblank = kern{p}(end,:);
+    
+    %kernplot = ifft(fft(kernplot).*abs(fft(kernsmooth)));
+
+    subplot(ceil(sqrt(Ncell)),ceil(sqrt(Ncell)),p)
+    
+%     [ma idma] = max(kernplot,[],3);
+%     [bestoriid bestsfid] = find(ma == max(ma(:)));
+%     besttauid = idma(bestoriid,bestsfid);
+%     sforikern = kernplot(:,:,besttauid);    
+%     
+%     tcori = squeeze(mean(kernplot,2));
+%     tcsf = squeeze(mean(kernplot,1));
+%     tcori = squeeze(kernplot(:,bestsfid,:));
+    %tcsf = squeeze(kernplot(bestoriid,:,:));
+
+    %imagesc(taudom,oridom(1:end-1),tcori)
+    %imagesc(taudom,sfdom(1:end-1),tcsf)
+    %imagesc(taudom,oridom,squeeze(kernplot(bestoriid,:,:)))
+    imagesc(taudom,oridom,squeeze(nanmean(kernplot,2)))
+    
+%     for td = 1:length(taudom)
+%         dum = kernplot(:,:,td);
+%         vprof(td) = var(dum(:));
+%     end
+%     
+%     [dum id] = max(vprof);
+%     id
+%     ran = id-2:id+2
+%     %ran = 2:4
+%     id = find(ran > length(taudom) | ran < 1);
+% 
+%     ran(id) = [];
+    %imagesc(mean(kernplot(:,:,ran),3))
+    
+    drawnow
+end

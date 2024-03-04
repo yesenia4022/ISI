@@ -1,0 +1,97 @@
+function [out] = photRevCorr(tau);
+
+global ACQinfo
+
+acqPeriod = ACQinfo.linesPerFrame*ACQinfo.msPerLine;  %sec per acquired frame
+Npix = ACQinfo.linesPerFrame*ACQinfo.pixelsPerLine;
+
+oriseq = stimseq(0:pepgetnoconditions-1);  %Get stimulus sequence
+
+oridom = unique([oriseq{1} oriseq{2} oriseq{3}]);
+% if oridom(end) == 999
+%     oridom = oridom(1:end-1);
+% end
+
+%%%%%%%%%%%%%%%%%%%
+sp = tau(2)-tau(1);
+
+tauBuild = tau(1):sp:acqPeriod*1000+tau(end);
+out = cell{1,2};
+out{1} = cell(1,length(oridom));
+for i = 1:length(oridom)
+    out{1}{i} = zeros(Npix,length(tauBuild));  %Initialize for accumulation
+end
+out{2} = out{1};
+countmat = zeros(length(oridom),length(tauBuild));
+
+
+counter = 0;
+
+for chan = 1:2  %Loop through both channels because of Matlab memory limits
+    for k = 1:length(oriseq)
+
+        pepsetcondition(k-1)
+
+        if chan == 1
+            CHs = GetTrialData(k,1,[1 0 0]);
+        elseif chan == 2
+            CHs = GetTrialData(k,1,[0 1 0]);
+        end
+
+
+        Tf = 1000/pepParam('refresh');  %Frame period in ms
+        hper = pepgetparam('h_period');
+        hper = hper(1);
+        %hper = 1;
+        Tupdate = Tf*hper;
+
+        respDomain = (0:length(CHs{1}(1,:))-1)*acqPeriod*1000;
+
+        oriseqdum = oriseq{k}(1:hper:end);
+
+        for ori = 1:length(oridom)
+
+            id = find(oriseqdum == oridom(ori));
+
+            stimes = (id-1)*Tupdate; %Stimulus times
+
+            for i = 1:length(stimes)
+
+                idx = find(respDomain > stimes(i) & respDomain <= stimes(i) + 500);
+                if ~isempty(idx)
+                    domidx = round((respDomain(idx)-stimes(i))/sp) + 1; %domain indices within time domain
+                    out{chan}{ori}(:,domidx) = out{chan}{ori}(:,domidx) + CHs{1}(:,idx);
+                    countmat(ori,domidx) = countmat(ori,domidx) + 1;
+                    counter = counter+length(domidx);
+                end
+
+            end
+        end
+    end
+    clear CHs
+
+end
+countmat = countmat/2;   %It was doubled by looping through the 2 channels
+
+for i = 1:length(oridom)
+    for j = 1:length(tauBuild)
+        out{1}{i}(:,j) = out{1}{i}(:,j)/countmat(i,j);  
+        out{2}{i}(:,j) = out{2}{i}(:,j)/countmat(i,j); 
+    end
+end
+
+
+delPix = 1000*ACQinfo.msPerLine/ACQinfo.pixelsPerLine; %ms per pixel
+
+%Shift each pixel in time
+L = length(tau);
+for j = 1:Npix
+    alp = round(delPix/sp)+1;
+    ome = alp + L - 1;
+    ome = min(ome,length(out{1}{1}(1,:)));
+    for i = 1:length(oridom)
+        outshift{1}{i}(j,:) = out{1}{i}(j,alp:ome);  
+        outshift{2}{i}(j,:) = out{2}{i}(j,alp:ome); 
+    end
+end
+
