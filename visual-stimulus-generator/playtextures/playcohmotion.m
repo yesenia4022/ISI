@@ -9,7 +9,7 @@ global Stxtr %Created in makeSyncTexture
 global DotFrame %created in makeRandomDots
 
 %Wake up the daq:
-DaqDOut(daq, 0, 0); %I do this at the beginning because it improves timing on the call to daq below
+%DaqDOut(daq, 0, 0); %I do this at the beginning because it improves timing on the call to daq below
 
 
 Pstruct = getParamStruct;
@@ -85,7 +85,7 @@ Screen(screenPTR, 'Flip');
 %f=f+1;
 if loopTrial ~= -1  %if you hit "run", send pulse
     digWord = 7;  %Make 1st,2nd,3rd bits high
-    DaqDOut(daq, 0, digWord);
+    %DaqDOut(daq, 0, digWord);
 end
 for i = 2:Npreframes
     Screen('DrawTexture', screenPTR, Stxtr(2),SyncPiece,SyncLoc);
@@ -104,7 +104,7 @@ Screen('DrawTextures', screenPTR, Stxtr(1),SyncPiece,SyncLoc);
 Screen(screenPTR, 'Flip');
 if loopTrial ~= -1
     digWord = 3;  %toggle 2nd bit to signal stim on
-    DaqDOut(daq, 0, digWord);
+    %DaqDOut(daq, 0, digWord);
 end
 for i = 2:Nstimframes
     Screen('DrawDots', screenPTR, DotFrame{i}, sizeDotsPx, [r g b],...
@@ -114,7 +114,7 @@ for i = 2:Nstimframes
 end
 if loopTrial ~= -1
     digWord = 1;  %toggle 2nd bit to signal stim off
-    DaqDOut(daq, 0, digWord);
+    %DaqDOut(daq, 0, digWord);
 end
 
 
@@ -133,7 +133,7 @@ Screen(screenPTR, 'Flip');
 if loopTrial ~= -1 %if you hit "run", send pulse
 %     digWord = bitxor(digWord,7); %toggle all 3 bits (1st/2nd bits go low, 3rd bit is flipped)
 %     DaqDOut(daq, 0,digWord);
-    DaqDOut(daq, 0, 0);  %Make sure 3rd bit finishes low
+    %DaqDOut(daq, 0, 0);  %Make sure 3rd bit finishes low
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
