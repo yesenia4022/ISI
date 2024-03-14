@@ -63,7 +63,7 @@ try
             %1. This makes certain that it starts at zero before scanning begins.
             if loopTrial == 1
                 global daq
-                DaqDOut(daq, 0, 0); %
+                %DaqDOut(daq, 0, 0); %
             end
             
             for i = 1:length(delims)-1

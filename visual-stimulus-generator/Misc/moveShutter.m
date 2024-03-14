@@ -10,4 +10,4 @@ shutterState=bitset(shutterState,LRports(eye),1-pos); %set 'eye' bit 0 or 1, to 
 
 disp(shutterState)
 
-DaqDOut(daq, 1, shutterState);
+%DaqDOut(daq, 1, shutterState);

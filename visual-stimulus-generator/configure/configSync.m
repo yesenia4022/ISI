@@ -9,7 +9,7 @@ if ~isempty(daq)
     
     DaqDConfigPort(daq,0,0);    
     
-    DaqDOut(daq, 0, 0); 
+    %DaqDOut(daq, 0, 0); 
     
 else
     
